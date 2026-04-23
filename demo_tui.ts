@@ -432,7 +432,8 @@ function mkOv(w: number, z = 6): Ov {
 function ovShow(ov: Ov, col: number, row: number, w: number, txt: string, style: any): void {
     ov.label.theme = { base: style, focused: style, active: style, disabled: style }
     ov.rect.value = { column: col, row, width: w, height: 1 }
-    ov.text.value = txt
+    // Pad text to full width to clear any leftover characters from previous content
+    ov.text.value = txt.length >= w ? txt.slice(0, w) : txt + " ".repeat(w - txt.length)
     ov.label.visible.value = true
     // Force style recomputation — theme isn't reactive in deno_tui
     ov.label.state.value = "focused"
@@ -884,7 +885,10 @@ function loadEditorText(): void {
     if (sel >= visibleItems.length) return
     const { item } = visibleItems[sel]
     const target = editTarget.peek()
-    editor.text.value = target === "draft" ? (item.draft_response ?? "") : (item.notes ?? "")
+    const newText = target === "draft" ? (item.draft_response ?? "") : (item.notes ?? "")
+    // Force Signal to fire even if text is the same (e.g., both empty)
+    editor.text.value = "\x00"
+    editor.text.value = newText
     editor.cursorPosition.value = { x: 0, y: 0 }
 }
 
