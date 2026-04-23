@@ -614,7 +614,7 @@ function renderListView(): void {
     }
 
     bodyText.value = padLines(lines, BODY_LINES)
-    helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
+    helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
 
     editor.rectangle.value = { column: 1, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
