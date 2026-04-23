@@ -347,11 +347,15 @@ export async function launchTUI(): Promise<void> {
     const detailSepOvs: Ov[] = []
     for (let i = 0; i < DETAIL_MAX_SEPS; i++) { detailSepOvs.push(mkOv(contentW)) }
 
+    const DETAIL_MAX_ERRORS = 10
+    const detailErrorOvs: Ov[] = []
+    for (let i = 0; i < DETAIL_MAX_ERRORS; i++) { detailErrorOvs.push(mkOv(contentW)) }
+
     function hideAllItemOvs(): void {
         ovHide(selBar)
         for (const io of itemOvs) { ovHide(io.status); ovHide(io.cat); ovHide(io.author); ovHide(io.file); ovHide(io.flags); ovHide(io.sep) }
     }
-    function hideAllDetailOvs(): void { for (const ov of detailAuthorOvs) { ovHide(ov) }; for (const ov of detailSepOvs) { ovHide(ov) } }
+    function hideAllDetailOvs(): void { for (const ov of detailAuthorOvs) { ovHide(ov) }; for (const ov of detailSepOvs) { ovHide(ov) }; for (const ov of detailErrorOvs) { ovHide(ov) } }
 
     // ── Render: list view ────────────────────────────────────────────
 
@@ -482,6 +486,7 @@ export async function launchTUI(): Promise<void> {
         const commentLines: string[] = []
         const authorRows: { row: number; author: string }[] = []
         const sepRows: number[] = []
+        const failedRows: number[] = []
         const panelW = contentW - 6
 
         if (item.type === "comment") {
@@ -496,10 +501,23 @@ export async function launchTUI(): Promise<void> {
                 commentLines.push("")
             }
         } else if (item.type === "ci_failure") {
-            commentLines.push(` CI Failure: ${item.check_name}`)
-            commentLines.push(` Commit: ${item.commit_sha.slice(0, 8)}`)
-            commentLines.push(` URL: ${item.url}`)
-            if (item.error_summary) { commentLines.push(""); for (const el of wordWrap(item.error_summary, panelW)) { commentLines.push(`    ${el}`) } }
+            authorRows.push({ row: commentLines.length, author: "CI" })
+            commentLines.push(` ✗  CI Failure: ${item.check_name}`)
+            commentLines.push("")
+            commentLines.push(`   Commit  ${item.commit_sha.slice(0, 8)}`)
+            commentLines.push(`   URL     ${item.url}`)
+            if (item.error_summary) {
+                commentLines.push("")
+                sepRows.push(commentLines.length)
+                commentLines.push(` ${"─".repeat(panelW + 2)}`)
+                commentLines.push("")
+                for (const el of item.error_summary.split("\n")) {
+                    const trimmed = el.trim()
+                    if (trimmed.startsWith("FAILED")) { failedRows.push(commentLines.length); commentLines.push(`   ✗ ${trimmed}`) }
+                    else if (trimmed) { commentLines.push(`     ${trimmed}`) }
+                    else { commentLines.push("") }
+                }
+            }
         } else if (item.type === "merge_conflict") {
             commentLines.push(` Merge Conflict with ${item.base_branch}`)
             if (item.conflicting_files.length > 0) { commentLines.push(""); for (const f of item.conflicting_files) { commentLines.push(`    ${f}`) } }
@@ -526,7 +544,12 @@ export async function launchTUI(): Promise<void> {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
             if (ovIdx >= DETAIL_MAX_AUTHORS) break
-            ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, Math.min(author.length + 4, 30), ` ${authorTag(author)} ${author}`, crayon.bgHex(BG).hex(authorHue(author)).bold)
+            if (author === "CI") {
+                const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
+                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, ciStr.length, ciStr, crayon.bgHex(BG).hex(RED).bold)
+            } else {
+                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, Math.min(author.length + 4, 30), ` ${authorTag(author)} ${author}`, crayon.bgHex(BG).hex(authorHue(author)).bold)
+            }
         }
 
         // Separator overlays (dimmed)
@@ -537,6 +560,16 @@ export async function launchTUI(): Promise<void> {
             if (sepIdx >= DETAIL_MAX_SEPS) break
             const sepText = ` ${"─".repeat(panelW + 2)}`
             ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, sepText.length, sepText, crayon.bgHex(BG).hex(0x45475a))
+        }
+
+        // FAILED line overlays (red)
+        let errIdx = 0
+        for (const srcRow of failedRows) {
+            const visRow = srcRow - scrollOff
+            if (visRow < 0 || visRow >= commentAreaHeight) continue
+            if (errIdx >= DETAIL_MAX_ERRORS) break
+            const errText = commentLines[srcRow] ?? ""
+            ovShow(detailErrorOvs[errIdx++], PAD_LEFT, ovRowBase + visRow, errText.length + 1, errText, crayon.bgHex(BG).hex(RED))
         }
 
         // Frames and editor position

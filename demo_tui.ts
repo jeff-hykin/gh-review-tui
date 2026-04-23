@@ -470,6 +470,12 @@ for (let i = 0; i < DETAIL_MAX_SEPS; i++) {
     detailSepOvs.push(mkOv(contentW))
 }
 
+const DETAIL_MAX_ERRORS = 10
+const detailErrorOvs: Ov[] = []
+for (let i = 0; i < DETAIL_MAX_ERRORS; i++) {
+    detailErrorOvs.push(mkOv(contentW))
+}
+
 function hideAllItemOvs(): void {
     ovHide(selBar)
     for (const io of itemOvs) {
@@ -481,6 +487,7 @@ function hideAllItemOvs(): void {
 function hideAllDetailOvs(): void {
     for (const ov of detailAuthorOvs) { ovHide(ov) }
     for (const ov of detailSepOvs) { ovHide(ov) }
+    for (const ov of detailErrorOvs) { ovHide(ov) }
 }
 
 log("Components created")
@@ -718,6 +725,7 @@ function renderDetailView(): void {
     const commentLines: string[] = []
     const authorRows: { row: number; author: string }[] = []
     const sepRows: number[] = []
+    const failedRows: number[] = []
     const panelW = contentW - 6
 
     if (item.type === "comment") {
@@ -735,13 +743,28 @@ function renderDetailView(): void {
             commentLines.push("")
         }
     } else if (item.type === "ci_failure") {
-        commentLines.push(` CI Failure: ${item.check_name}`)
-        commentLines.push(` Commit: ${item.commit_sha.slice(0, 8)}`)
-        commentLines.push(` URL: ${item.url}`)
+        // Track rows for CI-specific coloring
+        authorRows.push({ row: commentLines.length, author: "CI" })  // reuse author overlay for header
+        commentLines.push(` ✗  CI Failure: ${item.check_name}`)
+        commentLines.push("")
+        commentLines.push(`   Commit  ${item.commit_sha.slice(0, 8)}`)
+        commentLines.push(`   URL     ${item.url}`)
         if (item.error_summary) {
             commentLines.push("")
-            for (const el of wordWrap(item.error_summary, panelW)) {
-                commentLines.push(`    ${el}`)
+            sepRows.push(commentLines.length)
+            commentLines.push(` ${"─".repeat(panelW + 2)}`)
+            commentLines.push("")
+            for (const el of item.error_summary.split("\n")) {
+                // Color FAILED lines differently
+                const trimmed = el.trim()
+                if (trimmed.startsWith("FAILED")) {
+                    failedRows.push(commentLines.length)
+                    commentLines.push(`   ✗ ${trimmed}`)
+                } else if (trimmed) {
+                    commentLines.push(`     ${trimmed}`)
+                } else {
+                    commentLines.push("")
+                }
             }
         }
     } else if (item.type === "merge_conflict") {
@@ -779,9 +802,15 @@ function renderDetailView(): void {
         if (visRow < 0 || visRow >= commentAreaHeight) continue
         if (ovIdx >= DETAIL_MAX_AUTHORS) break
         const ov = detailAuthorOvs[ovIdx++]
-        const h = authorHue(author)
-        const authStr = ` ${authorTag(author)} ${author}`
-        ovShow(ov, PAD_LEFT, ovRowBase + visRow, authStr.length, authStr, crayon.bgHex(BG).hex(h).bold)
+        if (author === "CI") {
+            // CI failure header: red with ✗
+            const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
+            ovShow(ov, PAD_LEFT, ovRowBase + visRow, ciStr.length, ciStr, crayon.bgHex(BG).hex(RED).bold)
+        } else {
+            const h = authorHue(author)
+            const authStr = ` ${authorTag(author)} ${author}`
+            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authStr.length, authStr, crayon.bgHex(BG).hex(h).bold)
+        }
     }
 
     // Position separator overlays (dimmed)
@@ -792,6 +821,16 @@ function renderDetailView(): void {
         if (sepIdx >= DETAIL_MAX_SEPS) break
         const sepText = ` ${"─".repeat(panelW + 2)}`
         ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, sepText.length, sepText, crayon.bgHex(BG).hex(0x45475a))
+    }
+
+    // Position FAILED line overlays (red)
+    let errIdx = 0
+    for (const srcRow of failedRows) {
+        const visRow = srcRow - scrollOff
+        if (visRow < 0 || visRow >= commentAreaHeight) continue
+        if (errIdx >= DETAIL_MAX_ERRORS) break
+        const errText = commentLines[srcRow] ?? ""
+        ovShow(detailErrorOvs[errIdx++], PAD_LEFT, ovRowBase + visRow, errText.length + 1, errText, crayon.bgHex(BG).hex(RED))
     }
 
     // ── Frames and editor position ──
