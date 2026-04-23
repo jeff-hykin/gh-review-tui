@@ -853,21 +853,23 @@ function renderDetailView(): void {
         editorOverlay.visible.value = false
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "active"
-        helpText.value = " Typing...  cmd+enter submit reply  esc back to thread\n "
+        const editLabel = target === "notes" ? "NOTES" : "REPLY"
+        helpText.value = ` Editing ${editLabel}...  cmd+enter submit reply  esc back to thread\n `
     } else {
         setFrameColor(commentFrame, BLUE)
         setFrameColor(editorFrame, DIM)
-        // Show "press enter" overlay on top of editor
+        // Show "press enter" overlay on top of editor with tab label
+        const browseLabel = target === "notes" ? "NOTES" : "REPLY"
         const overlayLines: string[] = []
         const editorText = editor.text.peek()
         if (editorText) {
             const preview = editorText.split("\n").slice(0, editorHeight - 2)
             for (const line of preview) { overlayLines.push(` ${line}`) }
             while (overlayLines.length < Math.floor((editorHeight - 1) / 2)) { overlayLines.push(" ") }
-            overlayLines.push("  ── press enter to edit ──")
+            overlayLines.push(`  ── ${browseLabel}: press enter to edit ──`)
         } else {
             for (let i = 0; i < Math.floor((editorHeight - 1) / 2) - 1; i++) { overlayLines.push(" ") }
-            overlayLines.push("  ── press enter to start typing ──")
+            overlayLines.push(`  ── ${browseLabel}: press enter to start typing ──`)
         }
         while (overlayLines.length < editorHeight - 1) { overlayLines.push(" ") }
         editorOverlayText.value = overlayLines.join("\n")
