@@ -366,7 +366,16 @@ const editor = new TextBox({
                     textLines.splice(cur.y + 1, 1)
                 }
                 break
-            case "return": ++cur.y; break
+            case "return": {
+                // Split the current line at cursor position and insert a new line
+                const before = textLine.slice(0, cur.x)
+                const after = textLine.slice(cur.x)
+                textLines[cur.y] = before
+                textLines.splice(cur.y + 1, 0, after)
+                ++cur.y
+                cur.x = 0
+                break
+            }
             case "space": character = " "; break
             case "tab":   character = "\t"; break
             default:
@@ -856,6 +865,8 @@ function handleListKey(e: any): void {
         renderDetailView()
     } else if (k === "q" || k === "escape") {
         tui.destroy(); Deno.exit(0)
+    } else if (visibleItems.length === 0) {
+        return  // No items — ignore item-specific keys
     } else if (k === "r") {
         const { item } = visibleItems[selectedIndex.peek()]
         if (item.type === "comment") {
@@ -939,10 +950,13 @@ function handleDetailBrowseKey(e: any): void {
 }
 
 function handleDetailEditKey(e: any): void {
-    // cmd+enter = submit (only for draft/reply tab)
+    // cmd+enter = submit reply (only works on reply tab)
     if (e.key === "return" && (e.meta || e.ctrl)) {
+        if (editTarget.peek() !== "draft") {
+            // On notes tab — cmd+enter does nothing (notes aren't submittable)
+            return
+        }
         log("cmd+enter detected — would submit reply")
-        // TODO: actual submit via gh API
         saveEditorText()
         mode.value = "detail_browse"
         renderDetailView()

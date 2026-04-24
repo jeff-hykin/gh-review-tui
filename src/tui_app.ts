@@ -285,7 +285,7 @@ export async function launchTUI(): Promise<void> {
                     textLines[cur.y] = textLine.slice(0, cur.x) + textLine.slice(cur.x + 1)
                     if (cur.x === textLine.length && textLines.length - 1 > cur.y) { textLines[cur.y] += textLines[cur.y + 1]; textLines.splice(cur.y + 1, 1) }
                     break
-                case "return": ++cur.y; break
+                case "return": { const bef = textLine.slice(0, cur.x); const aft = textLine.slice(cur.x); textLines[cur.y] = bef; textLines.splice(cur.y + 1, 0, aft); ++cur.y; cur.x = 0; break }
                 case "space": character = " "; break; case "tab": character = "\t"; break
                 default: if (key.length > 1) return; character = key
             }
@@ -381,7 +381,7 @@ export async function launchTUI(): Promise<void> {
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
-        helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
+        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -585,14 +585,16 @@ export async function launchTUI(): Promise<void> {
                         resolvePromises.push(gh.resolveThread(item.thread_node_id).then(ok => { if (ok) item.resolved = true }))
                     }
                 }
+                helpText.value = ` Resolving ${resolvePromises.length} threads...\n `
                 Promise.all(resolvePromises).then(async () => {
                     await saveState(path, state!)
                     visibleItems = getVisibleItems()
                     if (selectedIndex.peek() >= visibleItems.length) { selectedIndex.value = Math.max(0, visibleItems.length - 1) }
                     renderListView()
                 })
+            } else {
+                renderListView()
             }
-            renderListView()
             return
         }
 
@@ -650,7 +652,7 @@ export async function launchTUI(): Promise<void> {
     }
 
     function handleDetailEditKey(e: any): void {
-        if (e.key === "return" && (e.meta || e.ctrl)) { sendCurrentDraft(); return }
+        if (e.key === "return" && (e.meta || e.ctrl)) { if (editTarget.peek() === "draft") { sendCurrentDraft() } return }
         if (e.key === "escape") { saveEditorText(); mode.value = "detail_browse"; renderDetailView() }
     }
 
