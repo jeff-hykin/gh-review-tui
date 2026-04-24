@@ -486,14 +486,14 @@ export async function launchTUI(): Promise<void> {
         headerText.value = hdr
 
         const commentLines: string[] = []
-        const authorRows: { row: number; author: string }[] = []
+        const authorRows: { row: number; author: string; date: string }[] = []
         const sepRows: number[] = []
         const failedRows: number[] = []
         const panelW = contentW - 6
 
         if (item.type === "comment") {
             for (const c of item.comments) {
-                authorRows.push({ row: commentLines.length, author: c.author })
+                authorRows.push({ row: commentLines.length, author: c.author, date: c.created_at.slice(0, 10) })
                 commentLines.push(` ${authorTag(c.author)} ${c.author}  ${c.created_at.slice(0, 10)}`)
                 commentLines.push("")
                 for (const wl of wordWrap(c.body, panelW)) { commentLines.push(`    ${wl}`) }
@@ -503,7 +503,7 @@ export async function launchTUI(): Promise<void> {
                 commentLines.push("")
             }
         } else if (item.type === "ci_failure") {
-            authorRows.push({ row: commentLines.length, author: "CI" })
+            authorRows.push({ row: commentLines.length, author: "CI", date: "" })
             commentLines.push(` ✗  CI Failure: ${item.check_name}`)
             commentLines.push("")
             commentLines.push(`   Commit  ${item.commit_sha.slice(0, 8)}`)
@@ -539,18 +539,20 @@ export async function launchTUI(): Promise<void> {
 
         const ovRowBase = BODY_ROW + 1
 
-        // Author overlays
+        // Author overlays — full content width to fully overwrite previous content
         hideAllDetailOvs()
+        const authOvWidth = contentW - 2
         let ovIdx = 0
-        for (const { row: srcRow, author } of authorRows) {
+        for (const { row: srcRow, author, date } of authorRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
             if (ovIdx >= DETAIL_MAX_AUTHORS) break
             if (author === "CI") {
                 const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
-                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, ciStr.length, ciStr, crayon.bgHex(BG).hex(RED).bold)
+                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, ciStr, crayon.bgHex(BG).hex(RED).bold)
             } else {
-                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, Math.min(author.length + 4, 30), ` ${authorTag(author)} ${author}`, crayon.bgHex(BG).hex(authorHue(author)).bold)
+                const authStr = ` ${authorTag(author)} ${author}  ${date}`
+                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, authStr, crayon.bgHex(BG).hex(authorHue(author)).bold)
             }
         }
 
@@ -561,7 +563,7 @@ export async function launchTUI(): Promise<void> {
             if (visRow < 0 || visRow >= commentAreaHeight) continue
             if (sepIdx >= DETAIL_MAX_SEPS) break
             const sepText = ` ${"─".repeat(panelW + 2)}`
-            ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, sepText.length, sepText, crayon.bgHex(BG).hex(0x45475a))
+            ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, sepText, crayon.bgHex(BG).hex(0x45475a))
         }
 
         // FAILED line overlays (red)

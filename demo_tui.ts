@@ -728,7 +728,7 @@ function renderDetailView(): void {
 
     // Build comment lines and track author header positions
     const commentLines: string[] = []
-    const authorRows: { row: number; author: string }[] = []
+    const authorRows: { row: number; author: string; date: string }[] = []
     const sepRows: number[] = []
     const failedRows: number[] = []
     const panelW = contentW - 6
@@ -736,7 +736,7 @@ function renderDetailView(): void {
     if (item.type === "comment") {
         for (const c of item.comments) {
             const date = c.created_at.slice(0, 10)
-            authorRows.push({ row: commentLines.length, author: c.author })
+            authorRows.push({ row: commentLines.length, author: c.author, date })
             commentLines.push(` ${authorTag(c.author)} ${c.author}  ${date}`)
             commentLines.push("")
             for (const wl of wordWrap(c.body, panelW)) {
@@ -749,7 +749,7 @@ function renderDetailView(): void {
         }
     } else if (item.type === "ci_failure") {
         // Track rows for CI-specific coloring
-        authorRows.push({ row: commentLines.length, author: "CI" })  // reuse author overlay for header
+        authorRows.push({ row: commentLines.length, author: "CI", date: "" })
         commentLines.push(` ✗  CI Failure: ${item.check_name}`)
         commentLines.push("")
         commentLines.push(`   Commit  ${item.commit_sha.slice(0, 8)}`)
@@ -799,22 +799,22 @@ function renderDetailView(): void {
     // Overlay row offset: +1 for the blank line prepended above
     const ovRowBase = BODY_ROW + 1
 
-    // Position author color overlays
+    // Position author color overlays — use full content width to fully overwrite previous content
     hideAllDetailOvs()
+    const authOvWidth = contentW - 2
     let ovIdx = 0
-    for (const { row: srcRow, author } of authorRows) {
+    for (const { row: srcRow, author, date } of authorRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
         if (ovIdx >= DETAIL_MAX_AUTHORS) break
         const ov = detailAuthorOvs[ovIdx++]
         if (author === "CI") {
-            // CI failure header: red with ✗
             const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
-            ovShow(ov, PAD_LEFT, ovRowBase + visRow, ciStr.length, ciStr, crayon.bgHex(BG).hex(RED).bold)
+            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authOvWidth, ciStr, crayon.bgHex(BG).hex(RED).bold)
         } else {
             const h = authorHue(author)
-            const authStr = ` ${authorTag(author)} ${author}`
-            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authStr.length, authStr, crayon.bgHex(BG).hex(h).bold)
+            const authStr = ` ${authorTag(author)} ${author}  ${date}`
+            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authOvWidth, authStr, crayon.bgHex(BG).hex(h).bold)
         }
     }
 
@@ -825,7 +825,7 @@ function renderDetailView(): void {
         if (visRow < 0 || visRow >= commentAreaHeight) continue
         if (sepIdx >= DETAIL_MAX_SEPS) break
         const sepText = ` ${"─".repeat(panelW + 2)}`
-        ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, sepText.length, sepText, crayon.bgHex(BG).hex(0x45475a))
+        ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, sepText, crayon.bgHex(BG).hex(0x45475a))
     }
 
     // Position FAILED line overlays (red)
