@@ -761,6 +761,18 @@ function renderDetailView(): void {
     }
 }
 
+// ── Actions ─────────────────────────────────────────────────────────────
+
+async function openCurrentItem(): Promise<void> {
+    const sel = selectedIndex.peek()
+    if (sel >= visibleItems.length) return
+    const { item } = visibleItems[sel]
+    if (item.type !== "comment") return
+    const { default: $ } = await import("jsr:@david/dax@0.42")
+    const target = item.line > 0 ? `${item.file}:${item.line}` : item.file
+    await $`code -g ${target}`.noThrow()
+}
+
 // ── Editor helpers ───────────────────────────────────────────────────────
 
 function loadEditorText(): void {
@@ -821,6 +833,7 @@ function handleListKey(e: any): void {
     } else if (k === "s") { visibleItems[selectedIndex.peek()].item.status = "solved"; renderListView() }
     else if (k === "S") { visibleItems[selectedIndex.peek()].item.status = "unaddressed"; renderListView() }
     else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
+    else if (k === "o") { openCurrentItem() }
     else if (k === "1") { visibleItems[selectedIndex.peek()].item.category = "simple_fix"; renderListView() }
     else if (k === "2") { visibleItems[selectedIndex.peek()].item.category = "discussion"; renderListView() }
     else if (k === "3") { visibleItems[selectedIndex.peek()].item.category = "wontfix"; renderListView() }
@@ -874,6 +887,8 @@ function handleDetailBrowseKey(e: any): void {
     } else if (k === "c") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
         copyToClipboard(generateClipboardContent(item, origIndex, state))
+    } else if (k === "o") {
+        openCurrentItem()
     } else if (k === "r") {
         const { item } = visibleItems[selectedIndex.peek()]
         if (item.type === "comment") { item.resolved = true }
