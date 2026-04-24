@@ -3,21 +3,21 @@
 // Run: deno run --allow-all demo_tui.ts
 
 import { crayon } from "https://deno.land/x/crayon@3.3.3/mod.ts"
-import { Tui } from "https://deno.land/x/tui@2.1.11/src/tui.ts"
-import { handleInput } from "https://deno.land/x/tui@2.1.11/src/input.ts"
-import { handleMouseControls } from "https://deno.land/x/tui@2.1.11/src/controls.ts"
-import { Signal } from "https://deno.land/x/tui@2.1.11/src/signals/mod.ts"
-import { TextBox } from "https://deno.land/x/tui@2.1.11/src/components/textbox.ts"
-import { Label } from "https://deno.land/x/tui@2.1.11/src/components/label.ts"
-import { Frame } from "https://deno.land/x/tui@2.1.11/src/components/frame.ts"
+import { Tui } from "deno_tui/tui.ts"
+import { handleInput } from "deno_tui/input.ts"
+import { handleMouseControls } from "deno_tui/controls.ts"
+import { Signal } from "deno_tui/signals/mod.ts"
+import { TextBox } from "deno_tui/components/textbox.ts"
+import { Label } from "deno_tui/components/label.ts"
+import { Frame } from "deno_tui/components/frame.ts"
 
 import type { ReviewState, ReviewItem, ItemCategory, ItemStatus } from "./src/types.ts"
 import { itemId, computeDisplayStatus } from "./src/types.ts"
 import { truncate } from "./src/display.ts"
 import { generateClipboardContent, copyToClipboard } from "./src/clipboard.ts"
 import { wordWrap } from "./src/word_wrap.ts"
-import { insertAt } from "https://deno.land/x/tui@2.1.11/src/utils/strings.ts"
-import { clamp } from "https://deno.land/x/tui@2.1.11/src/utils/numbers.ts"
+import { insertAt } from "deno_tui/utils/strings.ts"
+import { clamp } from "deno_tui/utils/numbers.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
 

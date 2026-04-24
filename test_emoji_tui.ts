@@ -2,10 +2,10 @@
 // Minimal test: can deno_tui Labels render emojis and BMP symbols?
 
 import { crayon } from "https://deno.land/x/crayon@3.3.3/mod.ts"
-import { Tui } from "https://deno.land/x/tui@2.1.11/src/tui.ts"
-import { handleInput } from "https://deno.land/x/tui@2.1.11/src/input.ts"
-import { Signal } from "https://deno.land/x/tui@2.1.11/src/signals/mod.ts"
-import { Label } from "https://deno.land/x/tui@2.1.11/src/components/label.ts"
+import { Tui } from "deno_tui/tui.ts"
+import { handleInput } from "deno_tui/input.ts"
+import { Signal } from "deno_tui/signals/mod.ts"
+import { Label } from "deno_tui/components/label.ts"
 
 const tui = new Tui({
     style: crayon.bgHex(0x1e1e2e),

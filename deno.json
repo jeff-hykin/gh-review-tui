@@ -6,6 +6,10 @@
         "run": "deno run --allow-all gre.ts"
     },
     "compilerOptions": {
-        "strict": true
+        "strict": true,
+        "noImplicitOverride": false
+    },
+    "imports": {
+        "deno_tui/": "file:///Users/jeffhykin/repos/deno_tui/src/"
     }
 }

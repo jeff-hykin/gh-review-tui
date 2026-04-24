@@ -5,15 +5,15 @@
 
 import { crayon } from "https://deno.land/x/crayon@3.3.3/mod.ts"
 
-import { Tui } from "https://deno.land/x/tui@2.1.11/src/tui.ts"
-import { handleInput } from "https://deno.land/x/tui@2.1.11/src/input.ts"
-import { handleKeyboardControls, handleMouseControls } from "https://deno.land/x/tui@2.1.11/src/controls.ts"
-import { Signal } from "https://deno.land/x/tui@2.1.11/src/signals/mod.ts"
+import { Tui } from "deno_tui/tui.ts"
+import { handleInput } from "deno_tui/input.ts"
+import { handleKeyboardControls, handleMouseControls } from "deno_tui/controls.ts"
+import { Signal } from "deno_tui/signals/mod.ts"
 
-import { TextBox } from "https://deno.land/x/tui@2.1.11/src/components/textbox.ts"
-import { Label } from "https://deno.land/x/tui@2.1.11/src/components/label.ts"
-import { Button } from "https://deno.land/x/tui@2.1.11/src/components/button.ts"
-import { Frame } from "https://deno.land/x/tui@2.1.11/src/components/frame.ts"
+import { TextBox } from "deno_tui/components/textbox.ts"
+import { Label } from "deno_tui/components/label.ts"
+import { Button } from "deno_tui/components/button.ts"
+import { Frame } from "deno_tui/components/frame.ts"
 
 // ── Initialize TUI ───────────────────────────────────────────────────────
 
