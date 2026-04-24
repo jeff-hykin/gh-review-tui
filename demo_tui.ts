@@ -288,6 +288,9 @@ const editor = new TextBox({
         // ── Ctrl shortcuts ──
         if (ctrl && key === "a") { cur.x = 0; editor.cursorPosition.value = { ...cur }; return }
         if (ctrl && key === "e") { cur.x = textLine.length; editor.cursorPosition.value = { ...cur }; return }
+        // Cmd+left/right → jump to start/end of line (macOS sends ctrl+arrow for cmd+arrow)
+        if (ctrl && key === "left") { cur.x = 0; editor.cursorPosition.value = { ...cur }; return }
+        if (ctrl && key === "right") { cur.x = textLine.length; editor.cursorPosition.value = { ...cur }; return }
         if (ctrl && key === "k") {
             // Kill to end of line
             textLines[cur.y] = textLine.slice(0, cur.x)

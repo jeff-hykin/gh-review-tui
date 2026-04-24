@@ -240,6 +240,8 @@ export async function launchTUI(): Promise<void> {
             // Ctrl shortcuts
             if (ctrl && key === "a") { cur.x = 0; editor.cursorPosition.value = { ...cur }; return }
             if (ctrl && key === "e") { cur.x = textLine.length; editor.cursorPosition.value = { ...cur }; return }
+            if (ctrl && key === "left") { cur.x = 0; editor.cursorPosition.value = { ...cur }; return }
+            if (ctrl && key === "right") { cur.x = textLine.length; editor.cursorPosition.value = { ...cur }; return }
             if (ctrl && key === "k") { textLines[cur.y] = textLine.slice(0, cur.x); editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return }
             // Alt/Option + arrow
             if (meta && (key === "left" || key === "b")) { cur.x = wordBoundaryLeft(textLine, cur.x); editor.cursorPosition.value = { ...cur }; return }
