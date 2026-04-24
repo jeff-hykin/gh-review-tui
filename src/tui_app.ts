@@ -250,14 +250,14 @@ export async function launchTUI(): Promise<void> {
 
     function recalcLayout(): void {
         const size = Deno.consoleSize()
-        termW = size.columns
-        termH = size.rows
-        contentW = Math.min(termW - PAD_LEFT * 2, 118)
-        BODY_LINES = termH - 3 - PAD_TOP
-        MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
-        splitRow = Math.floor(termH * 0.55) + PAD_TOP
-        editorHeight = termH - splitRow - 3
-        COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
+        termW = Math.max(20, size.columns)
+        termH = Math.max(6, size.rows)
+        contentW = Math.max(10, Math.min(termW - PAD_LEFT * 2, 118))
+        BODY_LINES = Math.max(1, termH - 3 - PAD_TOP)
+        MAX_VISIBLE_ITEMS = Math.max(1, Math.floor(BODY_LINES / LINES_PER_ITEM))
+        splitRow = Math.max(PAD_TOP + 2, Math.floor(termH * 0.55) + PAD_TOP)
+        editorHeight = Math.max(1, termH - splitRow - 3)
+        COMMENT_AREA_HEIGHT = Math.max(1, splitRow - 2 - PAD_TOP - 2)
         log("resize:", { termW, termH, contentW })
     }
 
