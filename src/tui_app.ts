@@ -595,7 +595,7 @@ export async function launchTUI(): Promise<void> {
             const overlayLines: string[] = []
             const edText = editor.text.peek()
             if (edText) {
-                for (const line of edText.split("\n").slice(0, editorHeight - 2)) { overlayLines.push(` ${line}`) }
+                for (const line of edText.split("\n").slice(0, editorHeight - 2)) { overlayLines.push(line || " ") }
                 while (overlayLines.length < Math.floor((editorHeight - 1) / 2)) { overlayLines.push(" ") }
                 overlayLines.push(`  ── ${browseLabel}: press enter to edit ──`)
             } else {
@@ -607,6 +607,7 @@ export async function launchTUI(): Promise<void> {
             editorOverlayRect.value = { column: PAD_LEFT + 1, row: edRow, width: contentW - 2, height: editorHeight - 1 }
             editorOverlay.visible.value = true
             editor.state.value = "base"
+            editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
             helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  esc back  r resolve  s solved\n `
         }
     }
