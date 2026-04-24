@@ -89,10 +89,10 @@ let detailCommentOffsets: number[] = []
 
 function statusLabel(s: ItemStatus): string {
     switch (s) {
-        case "unseen":      return " NEW "
-        case "unaddressed":  return "  .  "
-        case "auto_solved":  return " AUT "
-        case "solved":       return "  OK "
+        case "unseen":      return " ★  "
+        case "unaddressed":  return " ○  "
+        case "auto_solved":  return " ◎  "
+        case "solved":       return " ✓  "
     }
 }
 
@@ -100,7 +100,7 @@ function catLabel(c: ItemCategory): string {
     switch (c) {
         case "simple_fix":   return " fix "
         case "discussion":   return " dsc "
-        case "wontfix":      return " wnt "
+        case "wontfix":      return " ✗wnt"
         case "large_change": return " lrg "
         case "unknown":      return " ??? "
     }
@@ -397,13 +397,15 @@ export async function launchTUI(): Promise<void> {
         const target = editTarget.peek()
         const isEditing = mode.peek() === "detail_edit"
 
-        let hdr = ` ${id}`
+        const stIcon = statusLabel(item.status).trim()
+        const catIcon = catLabel(item.category).trim()
+        let hdr = ` ${stIcon} ${id}`
         if (item.type === "comment") { hdr += `  ${item.file}:${item.line}` }
         else if (item.type === "ci_failure") { hdr += `  CI: ${item.check_name}` }
         else { hdr += `  merge conflict` }
         const tabLabel = target === "notes" ? "NOTES" : "REPLY"
         const otherLabel = target === "notes" ? "reply" : "notes"
-        hdr += `  [${tabLabel}]`
+        hdr += `  [${catIcon}]  [${tabLabel}]`
         headerText.value = hdr
 
         const commentLines: string[] = []
