@@ -412,95 +412,11 @@ const editorOverlay = new Label({
     zIndex: 9,  // above editor (8)
 })
 
-// ── Overlay system ──────────────────────────────────────────────────────
-// deno_tui theme isn't reactive, so after changing theme we poke state to
-// force the Computed style to re-evaluate.
-
-type Ov = { text: Signal<string>; label: Label; rect: Signal<any> }
-
-function mkOv(w: number, z = 6): Ov {
-    const text = new Signal(" ")
-    const rect = new Signal<any>({ column: 0, row: 9999, width: w, height: 1 })
-    const s = crayon.bgHex(BG).hex(FG)
-    const label = new Label({
-        parent: tui,
-        theme: { base: s, focused: s, active: s, disabled: s },
-        rectangle: rect,
-        overwriteRectangle: true,
-        text,
-        zIndex: z,
-    })
-    label.visible.value = false
-    return { text, label, rect }
-}
-
-const baseStyle = crayon.bgHex(BG).hex(FG)
-
-function ovShow(ov: Ov, col: number, row: number, w: number, txt: string, style: any): void {
-    ov.label.theme = { base: style, focused: style, active: style, disabled: style }
-    ov.rect.value = { column: col, row, width: w, height: 1 }
-    // Pad text to full width to clear any leftover characters from previous content
-    ov.text.value = txt.length >= w ? txt.slice(0, w) : txt + " ".repeat(w - txt.length)
-    ov.label.visible.value = true
-    // Force style recomputation — theme isn't reactive in deno_tui
-    ov.label.state.value = "focused"
-    ov.label.state.value = "base"
-}
-
-function ovHide(ov: Ov): void {
-    ov.label.visible.value = false
-}
-
-// Selection highlight bar
-const selBar = mkOv(contentW, 5)
-
-// Per-item overlays for list view
-const itemOvs: { status: Ov; cat: Ov; author: Ov; file: Ov; flags: Ov; sep: Ov }[] = []
-for (let i = 0; i < MAX_VISIBLE_ITEMS; i++) {
-    itemOvs.push({
-        status: mkOv(5),
-        cat:    mkOv(5),
-        author: mkOv(20),
-        file:   mkOv(40),
-        flags:  mkOv(10),
-        sep:    mkOv(contentW),
-    })
-}
-
-// Detail view overlays for author headers
-const DETAIL_MAX_AUTHORS = 10
-const detailAuthorOvs: Ov[] = []
-for (let i = 0; i < DETAIL_MAX_AUTHORS; i++) {
-    detailAuthorOvs.push(mkOv(40))
-}
-
-const DETAIL_MAX_SEPS = 10
-const detailSepOvs: Ov[] = []
-for (let i = 0; i < DETAIL_MAX_SEPS; i++) {
-    detailSepOvs.push(mkOv(contentW))
-}
-
-const DETAIL_MAX_ERRORS = 10
-const detailErrorOvs: Ov[] = []
-for (let i = 0; i < DETAIL_MAX_ERRORS; i++) {
-    detailErrorOvs.push(mkOv(contentW))
-}
-
-function hideAllItemOvs(): void {
-    ovHide(selBar)
-    for (const io of itemOvs) {
-        ovHide(io.status); ovHide(io.cat); ovHide(io.author)
-        ovHide(io.file); ovHide(io.flags); ovHide(io.sep)
-    }
-}
-
-function hideAllDetailOvs(): void {
-    for (const ov of detailAuthorOvs) { ovHide(ov) }
-    for (const ov of detailSepOvs) { ovHide(ov) }
-    for (const ov of detailErrorOvs) { ovHide(ov) }
-}
-
 log("Components created")
+
+// ── Inline color helpers ────────────────────────────────────────────────
+// All coloring uses inline ANSI via crayon, embedded directly in Label text.
+// No overlay Labels needed.
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -563,7 +479,6 @@ function itemSnippet(item: ReviewItem, w: number): string {
 
 function renderListView(): void {
     log("renderListView")
-    hideAllDetailOvs()
     editorOverlay.visible.value = false
     editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     commentFrame.visible.value = false
@@ -580,13 +495,13 @@ function renderListView(): void {
     const endIdx = Math.min(startIdx + MAX_VISIBLE_ITEMS, visibleItems.length)
 
     for (let i = startIdx; i < endIdx; i++) {
-        const { item, origIndex } = visibleItems[i]
+        const { item } = visibleItems[i]
         const isSelected = i === sel
         const ds = computeDisplayStatus(item, state.gh_user)
+        const bg = isSelected ? BG_SEL : BG
+        const baseFg = crayon.bgHex(bg).hex(FG)
 
-        const ptr = isSelected ? " ▸" : "  "
-        const st = statusLabel(item.status)
-
+        // Author info
         let authName = ""
         if (item.type === "comment" && item.comments.length > 0) {
             authName = item.comments[0].author
@@ -595,29 +510,47 @@ function renderListView(): void {
         } else if (item.type === "merge_conflict") {
             authName = "Merge Conflict"
         }
+        const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
 
+        // Flags
         const flagParts: string[] = []
         if (item.draft_response) { flagParts.push("D") }
         if (item.notes) { flagParts.push("N") }
         if (ds === "pending") { flagParts.push("wait") }
-        const flagStr = flagParts.join(" ")
 
         const file = shortFile(item)
-        const cat = catLabel(item.category)
         const snippet = itemSnippet(item, contentW - 8)
 
-        const line1Left = `${ptr} ${st}  ${authorTag(authName)} ${authName}`
-        const line1Right = `${file}  ${cat}`
-        const gap1 = Math.max(1, contentW - line1Left.length - line1Right.length)
-        const line1 = line1Left + " ".repeat(gap1) + line1Right
+        // ── Line 1: pointer + status + author + (right-aligned) file + category ──
+        const ptr = isSelected ? baseFg(" ▸") : baseFg("  ")
+        const stStyled = statusColor(item.status, isSelected)(statusLabel(item.status))
+        const authStyled = crayon.bgHex(bg).hex(hue)(`${authorTag(authName)} ${authName}`)
+        const fileStyled = file ? crayon.bgHex(bg).hex(DIM)(file) : ""
+        const catStyled = catColor(item.category, isSelected)(catLabel(item.category))
 
-        const indent = "       "
-        const line2Left = `${indent}${snippet}`
-        const line2Right = flagStr ? `  ${flagStr}  ` : ""
-        const gap2 = Math.max(1, contentW - line2Left.length - line2Right.length)
-        const line2 = line2Left + " ".repeat(gap2) + line2Right
+        // Calculate gap (use plain-text lengths for spacing)
+        const l1Left = `   ${statusLabel(item.status)}  ${authorTag(authName)} ${authName}`
+        const l1Right = `${file}  ${catLabel(item.category)}`
+        const gap1 = Math.max(1, contentW - l1Left.length - l1Right.length)
 
-        const line3 = `  ${"─".repeat(Math.min(contentW - 4, 60))}`
+        const line1 = ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled
+            + baseFg(" ".repeat(gap1)) + fileStyled + baseFg("  ") + catStyled
+
+        // ── Line 2: snippet + (right-aligned) flags ──
+        const indent = baseFg("       ")
+        const snippetStyled = baseFg(snippet)
+        const flagStyled = flagParts.length
+            ? crayon.bgHex(bg).hex(CYAN)(` ${flagParts.join(" ")} `)
+            : ""
+
+        const l2Left = `       ${snippet}`
+        const l2Right = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
+        const gap2 = Math.max(1, contentW - l2Left.length - l2Right.length)
+
+        const line2 = indent + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
+
+        // ── Line 3: separator ──
+        const line3 = crayon.bgHex(BG).hex(0x45475a)(`  ${"─".repeat(Math.min(contentW - 4, 60))}`)
 
         lines.push(line1, line2, line3)
     }
@@ -625,94 +558,14 @@ function renderListView(): void {
     bodyText.value = padLines(lines, BODY_LINES)
     helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
 
-    editor.rectangle.value = { column: 1, row: 9999, width: contentW, height: editorHeight }
+    editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
-
-    // ── Position overlays ──
-
-    for (let vi = 0; vi < MAX_VISIBLE_ITEMS; vi++) {
-        const io = itemOvs[vi]
-        const dataIdx = startIdx + vi
-        if (dataIdx >= endIdx) {
-            ovHide(io.status); ovHide(io.cat); ovHide(io.author)
-            ovHide(io.file); ovHide(io.flags); ovHide(io.sep)
-            continue
-        }
-
-        const { item } = visibleItems[dataIdx]
-        const isSelected = dataIdx === sel
-        const row1 = BODY_ROW + vi * LINES_PER_ITEM
-        const row2 = row1 + 1
-        const row3 = row1 + 2
-
-        if (isSelected) {
-            selBar.rect.value = { column: PAD_LEFT, row: row1, width: contentW, height: 2 }
-            selBar.text.value = " \n "
-            const sty = crayon.bgHex(BG_SEL).hex(FG)
-            selBar.label.theme = { base: sty, focused: sty, active: sty, disabled: sty }
-            selBar.label.visible.value = true
-            selBar.label.state.value = "focused"
-            selBar.label.state.value = "base"
-        }
-
-        const bg = isSelected ? BG_SEL : BG
-
-        ovShow(io.status, PAD_LEFT + 3, row1, 5, statusLabel(item.status), statusColor(item.status, isSelected))
-
-        const catCol = PAD_LEFT + contentW - 5
-        ovShow(io.cat, catCol, row1, 5, catLabel(item.category), catColor(item.category, isSelected))
-
-        let authName = ""
-        if (item.type === "comment" && item.comments.length > 0) {
-            authName = item.comments[0].author
-        } else if (item.type === "ci_failure") {
-            authName = "CI Failure"
-        } else if (item.type === "merge_conflict") {
-            authName = "Merge Conflict"
-        }
-        const authCol = PAD_LEFT + 10  // "PP SSS  " = 2+1+5+2 = 10 chars before author tag
-        const authW = Math.min(authName.length + 3, 22)
-        const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
-        ovShow(io.author, authCol, row1, authW, `${authorTag(authName)} ${authName}`, crayon.bgHex(bg).hex(hue))
-
-        const file = shortFile(item)
-        if (file) {
-            const fileW = Math.min(file.length + 2, 35)
-            const fileCol = catCol - fileW - 1
-            ovShow(io.file, fileCol, row1, fileW, `${file}  `, crayon.bgHex(bg).hex(DIM))
-        } else {
-            ovHide(io.file)
-        }
-
-        const flagParts: string[] = []
-        if (item.draft_response) { flagParts.push("D") }
-        if (item.notes) { flagParts.push("N") }
-        const ds = computeDisplayStatus(item, state.gh_user)
-        if (ds === "pending") { flagParts.push("wait") }
-        if (flagParts.length > 0) {
-            const flagStr = ` ${flagParts.join(" ")} `
-            const flagCol = PAD_LEFT + contentW - flagStr.length
-            ovShow(io.flags, flagCol, row2, flagStr.length, flagStr, crayon.bgHex(bg).hex(CYAN))
-        } else {
-            ovHide(io.flags)
-        }
-
-        const sepStr = "  " + "─".repeat(Math.min(contentW - 4, 60))
-        ovShow(io.sep, PAD_LEFT, row3, sepStr.length, sepStr, crayon.bgHex(BG).hex(0x45475a))
-    }
-
-    for (let vi = endIdx - startIdx; vi < MAX_VISIBLE_ITEMS; vi++) {
-        const io = itemOvs[vi]
-        ovHide(io.status); ovHide(io.cat); ovHide(io.author)
-        ovHide(io.file); ovHide(io.flags); ovHide(io.sep)
-    }
 }
 
 // ── Render: detail view ──────────────────────────────────────────────────
 
 function renderDetailView(): void {
     log("renderDetailView")
-    hideAllItemOvs()
 
     const sel = selectedIndex.peek()
     if (sel >= visibleItems.length) return
@@ -804,10 +657,7 @@ function renderDetailView(): void {
     // Overlay row offset: +1 for the blank line prepended above
     const ovRowBase = BODY_ROW + 1
 
-    // Use inline ANSI colors in the body text instead of overlays for the detail view.
-    // The fork now supports inline colors, so we embed crayon-styled text directly.
-    hideAllDetailOvs()
-    const authOvWidth = contentW - 2
+    // Inline ANSI colors for author names, separators, and error lines
 
     // Re-style author lines in bodyLines with inline ANSI colors
     for (const { row: srcRow, author, date } of authorRows) {

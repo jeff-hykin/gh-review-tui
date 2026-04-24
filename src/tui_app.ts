@@ -312,59 +312,10 @@ export async function launchTUI(): Promise<void> {
         frame.state.value = "focused"; frame.state.value = "base"
     }
 
-    // ── Overlay system ──────────────────────────────────────────────
-
-    type Ov = { text: Signal<string>; label: Label; rect: Signal<any> }
-
-    function mkOv(w: number, z = 6): Ov {
-        const text = new Signal(" ")
-        const rect = new Signal<any>({ column: 0, row: 9999, width: w, height: 1 })
-        const s = crayon.bgHex(BG).hex(FG)
-        const label = new Label({ parent: tui, theme: { base: s, focused: s, active: s, disabled: s }, rectangle: rect, overwriteRectangle: true, text, zIndex: z })
-        label.visible.value = false
-        return { text, label, rect }
-    }
-
-    function ovShow(ov: Ov, col: number, row: number, w: number, txt: string, style: any): void {
-        ov.label.theme = { base: style, focused: style, active: style, disabled: style }
-        ov.rect.value = { column: col, row, width: w, height: 1 }
-        ov.text.value = txt.length >= w ? txt.slice(0, w) : txt + " ".repeat(w - txt.length)
-        ov.label.visible.value = true
-        ov.label.state.value = "focused"; ov.label.state.value = "base"
-    }
-
-    function ovHide(ov: Ov): void { ov.label.visible.value = false }
-
-    const selBar = mkOv(contentW, 5)
-
-    const itemOvs: { status: Ov; cat: Ov; author: Ov; file: Ov; flags: Ov; sep: Ov }[] = []
-    for (let i = 0; i < MAX_VISIBLE_ITEMS; i++) {
-        itemOvs.push({ status: mkOv(5), cat: mkOv(5), author: mkOv(20), file: mkOv(40), flags: mkOv(10), sep: mkOv(contentW) })
-    }
-
-    const DETAIL_MAX_AUTHORS = 10
-    const detailAuthorOvs: Ov[] = []
-    for (let i = 0; i < DETAIL_MAX_AUTHORS; i++) { detailAuthorOvs.push(mkOv(40)) }
-
-    const DETAIL_MAX_SEPS = 10
-    const detailSepOvs: Ov[] = []
-    for (let i = 0; i < DETAIL_MAX_SEPS; i++) { detailSepOvs.push(mkOv(contentW)) }
-
-    const DETAIL_MAX_ERRORS = 10
-    const detailErrorOvs: Ov[] = []
-    for (let i = 0; i < DETAIL_MAX_ERRORS; i++) { detailErrorOvs.push(mkOv(contentW)) }
-
-    function hideAllItemOvs(): void {
-        ovHide(selBar)
-        for (const io of itemOvs) { ovHide(io.status); ovHide(io.cat); ovHide(io.author); ovHide(io.file); ovHide(io.flags); ovHide(io.sep) }
-    }
-    function hideAllDetailOvs(): void { for (const ov of detailAuthorOvs) { ovHide(ov) }; for (const ov of detailSepOvs) { ovHide(ov) }; for (const ov of detailErrorOvs) { ovHide(ov) } }
-
     // ── Render: list view ────────────────────────────────────────────
 
     function renderListView(): void {
         log("renderListView")
-        hideAllDetailOvs()
         editorOverlay.visible.value = false
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         commentFrame.visible.value = false
@@ -383,13 +334,14 @@ export async function launchTUI(): Promise<void> {
             const { item } = visibleItems[i]
             const isSelected = i === sel
             const ds = computeDisplayStatus(item, state!.gh_user)
-            const ptr = isSelected ? " ▸" : "  "
-            const st = statusLabel(item.status)
+            const bg = isSelected ? BG_SEL : BG
+            const baseFg = crayon.bgHex(bg).hex(FG)
 
             let authName = ""
             if (item.type === "comment" && item.comments.length > 0) { authName = item.comments[0].author }
             else if (item.type === "ci_failure") { authName = "CI Failure" }
             else if (item.type === "merge_conflict") { authName = "Merge Conflict" }
+            const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
 
             const flagParts: string[] = []
             if (item.draft_response) { flagParts.push("D") }
@@ -397,78 +349,41 @@ export async function launchTUI(): Promise<void> {
             if (ds === "pending") { flagParts.push("wait") }
 
             const file = shortFile(item)
-            const cat = catLabel(item.category)
             const snippet = itemSnippet(item, contentW - 8)
 
-            const l1L = `${ptr} ${st}  ${authorTag(authName)} ${authName}`
-            const l1R = `${file}  ${cat}`
-            const g1 = Math.max(1, contentW - l1L.length - l1R.length)
-            lines.push(l1L + " ".repeat(g1) + l1R)
+            // Line 1: inline colored
+            const ptr = isSelected ? baseFg(" ▸") : baseFg("  ")
+            const stStyled = statusColor(item.status, isSelected)(statusLabel(item.status))
+            const authStyled = crayon.bgHex(bg).hex(hue)(`${authorTag(authName)} ${authName}`)
+            const fileStyled = file ? crayon.bgHex(bg).hex(DIM)(file) : ""
+            const catStyled = catColor(item.category, isSelected)(catLabel(item.category))
 
+            const l1L = `   ${statusLabel(item.status)}  ${authorTag(authName)} ${authName}`
+            const l1R = `${file}  ${catLabel(item.category)}`
+            const g1 = Math.max(1, contentW - l1L.length - l1R.length)
+            lines.push(ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled + baseFg(" ".repeat(g1)) + fileStyled + baseFg("  ") + catStyled)
+
+            // Line 2: snippet + flags
             const l2L = `       ${snippet}`
             const l2R = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
             const g2 = Math.max(1, contentW - l2L.length - l2R.length)
-            lines.push(l2L + " ".repeat(g2) + l2R)
+            const flagStyled = flagParts.length ? crayon.bgHex(bg).hex(CYAN)(` ${flagParts.join(" ")} `) : ""
+            lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
-            lines.push(`  ${"─".repeat(Math.min(contentW - 4, 60))}`)
+            // Line 3: separator
+            lines.push(crayon.bgHex(BG).hex(0x45475a)(`  ${"─".repeat(Math.min(contentW - 4, 60))}`))
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
         helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync  o open"
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
-
-        // Overlays
-        for (let vi = 0; vi < MAX_VISIBLE_ITEMS; vi++) {
-            const io = itemOvs[vi]
-            const dataIdx = startIdx + vi
-            if (dataIdx >= endIdx) { ovHide(io.status); ovHide(io.cat); ovHide(io.author); ovHide(io.file); ovHide(io.flags); ovHide(io.sep); continue }
-            const { item } = visibleItems[dataIdx]
-            const isSelected = dataIdx === sel
-            const row1 = BODY_ROW + vi * LINES_PER_ITEM, row2 = row1 + 1, row3 = row1 + 2
-            const bg = isSelected ? BG_SEL : BG
-
-            if (isSelected) {
-                const sty = crayon.bgHex(BG_SEL).hex(FG)
-                selBar.label.theme = { base: sty, focused: sty, active: sty, disabled: sty }
-                selBar.rect.value = { column: PAD_LEFT, row: row1, width: contentW, height: 2 }
-                selBar.text.value = " \n "; selBar.label.visible.value = true
-                selBar.label.state.value = "focused"; selBar.label.state.value = "base"
-            }
-
-            ovShow(io.status, PAD_LEFT + 3, row1, 5, statusLabel(item.status), statusColor(item.status, isSelected))
-            const catCol = PAD_LEFT + contentW - 5
-            ovShow(io.cat, catCol, row1, 5, catLabel(item.category), catColor(item.category, isSelected))
-
-            let authName = ""
-            if (item.type === "comment" && item.comments.length > 0) { authName = item.comments[0].author }
-            else if (item.type === "ci_failure") { authName = "CI Failure" }
-            else if (item.type === "merge_conflict") { authName = "Merge Conflict" }
-            const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
-            ovShow(io.author, PAD_LEFT + 10, row1, Math.min(authName.length + 3, 22), `${authorTag(authName)} ${authName}`, crayon.bgHex(bg).hex(hue))
-
-            const file = shortFile(item)
-            if (file) { const fw = Math.min(file.length + 2, 35); ovShow(io.file, catCol - fw - 1, row1, fw, `${file}  `, crayon.bgHex(bg).hex(DIM)) }
-            else { ovHide(io.file) }
-
-            const flagParts: string[] = []
-            if (item.draft_response) { flagParts.push("D") }; if (item.notes) { flagParts.push("N") }
-            if (computeDisplayStatus(item, state!.gh_user) === "pending") { flagParts.push("wait") }
-            if (flagParts.length) { const fs = ` ${flagParts.join(" ")} `; ovShow(io.flags, PAD_LEFT + contentW - fs.length, row2, fs.length, fs, crayon.bgHex(bg).hex(CYAN)) }
-            else { ovHide(io.flags) }
-
-            ovShow(io.sep, PAD_LEFT, row3, contentW, `  ${"─".repeat(Math.min(contentW - 4, 60))}`, crayon.bgHex(BG).hex(0x45475a))
-        }
-        for (let vi = endIdx - startIdx; vi < MAX_VISIBLE_ITEMS; vi++) {
-            const io = itemOvs[vi]; ovHide(io.status); ovHide(io.cat); ovHide(io.author); ovHide(io.file); ovHide(io.flags); ovHide(io.sep)
-        }
     }
 
     // ── Render: detail view ──────────────────────────────────────────
 
     function renderDetailView(): void {
         log("renderDetailView")
-        hideAllItemOvs()
 
         const sel = selectedIndex.peek()
         if (sel >= visibleItems.length) return
@@ -540,8 +455,7 @@ export async function launchTUI(): Promise<void> {
 
         const ovRowBase = BODY_ROW + 1
 
-        // Use inline ANSI colors instead of overlays for detail view
-        hideAllDetailOvs()
+        // Inline ANSI colors for author names, separators, and error lines
 
         for (const { row: srcRow, author, date } of authorRows) {
             const visRow = srcRow - scrollOff
