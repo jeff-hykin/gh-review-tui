@@ -670,7 +670,7 @@ function renderDetailView(): void {
 
     // Scroll and build visible portion
     // commentAreaHeight is the visible lines inside the frame (minus 2 for frame borders)
-    const commentAreaHeight = COMMENT_AREA_HEIGHT
+    const commentAreaHeight = COMMENT_AREA_HEIGHT - 2  // -2 for status bar + separator inside frame
     const scrollOff = commentScrollOffset.peek()
     const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
@@ -705,12 +705,20 @@ function renderDetailView(): void {
         return visW >= targetW ? s : s + " ".repeat(targetW - visW)
     }
 
+    // Status bar inside the frame
+    const stBadge = statusColor(item.status, false)(statusLabel(item.status))
+    const catBadge = catColor(item.category, false)(catLabel(item.category))
+    const resolvedBadge = (item.type === "comment" && item.resolved) ? C.green(" ✓ resolved ") : ""
+    const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}`
+
     const bodyLines: string[] = []
     bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
+    bodyLines.push(frameDim("│") + padToWidth(statusBarText, frameW) + frameDim("│"))
+    bodyLines.push(frameDim("│") + frameDim(`${"─".repeat(frameW)}`) + frameDim("│"))
     for (const line of scrolled) {
         bodyLines.push(frameDim("│") + padToWidth(line || "", frameW) + frameDim("│"))
     }
-    while (bodyLines.length < commentAreaHeight + 1) {
+    while (bodyLines.length < commentAreaHeight + 3) {
         bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│"))
     }
     bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))

@@ -450,7 +450,7 @@ export async function launchTUI(): Promise<void> {
 
         detailCommentOffsets = authorRows.map(r => r.row)
 
-        const commentAreaHeight = COMMENT_AREA_HEIGHT
+        const commentAreaHeight = COMMENT_AREA_HEIGHT - 2
         const scrollOff = commentScrollOffset.peek()
         const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
@@ -482,10 +482,17 @@ export async function launchTUI(): Promise<void> {
             const visW = tuiTextWidth(s)
             return visW >= targetW ? s : s + " ".repeat(targetW - visW)
         }
+        const stBadge = statusColor(item.status, false)(statusLabel(item.status))
+        const catBadge = catColor(item.category, false)(catLabel(item.category))
+        const resolvedBadge = (item.type === "comment" && item.resolved) ? C.green(" ✓ resolved ") : ""
+        const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}`
+
         const bodyLines: string[] = []
         bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
+        bodyLines.push(frameDim("│") + padToWidth(statusBarText, frameW) + frameDim("│"))
+        bodyLines.push(frameDim("│") + frameDim(`${"─".repeat(frameW)}`) + frameDim("│"))
         for (const line of scrolled) { bodyLines.push(frameDim("│") + padToWidth(line || "", frameW) + frameDim("│")) }
-        while (bodyLines.length < commentAreaHeight + 1) { bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│")) }
+        while (bodyLines.length < commentAreaHeight + 3) { bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│")) }
         bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))
         bodyLines.push("")
         bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
