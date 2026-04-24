@@ -576,7 +576,7 @@ function renderListView(): void {
         const line2 = indent + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
 
         // ── Line 3: separator ──
-        const line3 = C.sep(`  ${"─".repeat(Math.min(contentW - 4, 60))}`)
+        const line3 = C.sep(`${"─".repeat(contentW)}`)
 
         lines.push(line1, line2, line3)
     }

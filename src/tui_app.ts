@@ -376,7 +376,7 @@ export async function launchTUI(): Promise<void> {
             const flagStyled = flagParts.length ? (isSelected ? C.selCyan : C.cyan)(` ${flagParts.join(" ")} `) : ""
             lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
-            lines.push(C.sep(`  ${"─".repeat(Math.min(contentW - 4, 60))}`))
+            lines.push(C.sep(`${"─".repeat(contentW)}`))
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
