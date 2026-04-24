@@ -527,6 +527,15 @@ const C = {
     badgeAut:  crayon.bgHex(ORANGE).hex(BG_SURF),
     badgeDim:  crayon.bgHex(BG).hex(DIM),
     badgeSelDim: crayon.bgHex(BG_SEL).hex(DIM),
+    hkKey:     crayon.bgHex(BG).hex(CYAN).bold,
+}
+
+// Help-bar shortcut: bright key, dim word
+function hk(key: string, word: string): string {
+    return C.hkKey(key) + C.dim(" " + word)
+}
+function helpBar(entries: Array<[string, string]>): string {
+    return " " + entries.map(([k, w]) => hk(k, w)).join(C.dim("  "))
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -676,7 +685,10 @@ function renderListView(): void {
     }
 
     bodyText.value = padLines(lines, BODY_LINES)
-    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n / search  ctrl+z undo  1 fix  2 discuss  3 wontfix  4 large  0 unknown"
+    helpText.value =
+        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["r", "resolve"], ["A", "resolve-all"], ["s", "solved"], ["S", "unsolved"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+        + "\n"
+        + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"]])
 
     editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
@@ -846,7 +858,7 @@ function renderDetailView(): void {
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "active"
         const editLabel = target === "notes" ? "NOTES" : "REPLY"
-        helpText.value = ` Editing ${editLabel}...  cmd+enter submit reply  esc back to thread\n `
+        helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("cmd+enter", "submit reply")}  ${hk("esc", "back to thread")}\n `
     } else {
         setFrameColor(editorFrame, DIM)
         // Show "press enter" overlay on top of editor with tab label
@@ -869,7 +881,11 @@ function renderDetailView(): void {
         editor.state.value = "base"
         // Move editor off-screen so it doesn't bleed through the overlay
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-        helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  w web  esc back  r resolve  s solved\n `
+        helpText.value = " " + [
+            hk("up/dn", "comments"), hk("left/right", otherLabel), hk("enter", "edit"),
+            hk("v", "viewed"), hk("c", "clip"), hk("o", "open"), hk("w", "web"),
+            hk("esc", "back"), hk("r", "resolve"), hk("s", "solved"),
+        ].join(C.dim("  ")) + "\n "
     }
 }
 
@@ -1057,6 +1073,11 @@ function handleListKey(e: any): void {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "unaddressed" })
         item.status = "unaddressed"; renderListView()
+    } else if (k === "v") {
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        const next = item.status === "unseen" ? "unaddressed" : "unseen"
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
+        item.status = next; renderListView()
     } else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
     else if (k === "o") { openCurrentItem() }
     else if (k === "w") { openInBrowser() }
@@ -1136,6 +1157,12 @@ function handleDetailBrowseKey(e: any): void {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "solved" })
         item.status = "solved"
+        renderDetailView()
+    } else if (k === "v") {
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        const next = item.status === "unseen" ? "unaddressed" : "unseen"
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
+        item.status = next
         renderDetailView()
     }
 }

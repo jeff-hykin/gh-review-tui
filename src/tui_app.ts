@@ -117,6 +117,15 @@ const C = {
     badgeNew: crayon.bgHex(YELLOW).hex(BG_SURF).bold, badgeOk: crayon.bgHex(GREEN).hex(BG_SURF),
     badgeAut: crayon.bgHex(ORANGE).hex(BG_SURF), badgeDim: crayon.bgHex(BG).hex(DIM),
     badgeSelDim: crayon.bgHex(BG_SEL).hex(DIM),
+    hkKey: crayon.bgHex(BG).hex(CYAN).bold,
+}
+
+// Help-bar shortcut: bright key, dim word
+function hk(key: string, word: string): string {
+    return C.hkKey(key) + C.dim(" " + word)
+}
+function helpBar(entries: Array<[string, string]>): string {
+    return " " + entries.map(([k, w]) => hk(k, w)).join(C.dim("  "))
 }
 
 function statusColor(s: ItemStatus, sel: boolean): any {
@@ -440,7 +449,10 @@ export async function launchTUI(): Promise<void> {
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
-        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n / search  ctrl+z undo  1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
+        helpText.value =
+            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["s", "solved"], ["S", "unsolved"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+            + "\n"
+            + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -577,7 +589,7 @@ export async function launchTUI(): Promise<void> {
             editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
             editor.state.value = "active"
             const editLabel = target === "notes" ? "NOTES" : "REPLY"
-            helpText.value = ` Editing ${editLabel}...  cmd+enter submit reply  esc back to thread\n `
+            helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("cmd+enter", "submit reply")}  ${hk("esc", "back to thread")}\n `
         } else {
             setFrameColor(editorFrame, DIM)
             const browseLabel = target === "notes" ? "NOTES" : "REPLY"
@@ -597,7 +609,11 @@ export async function launchTUI(): Promise<void> {
             editorOverlay.visible.value = true
             editor.state.value = "base"
             editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-            helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  w web  esc back  r resolve  s solved\n `
+            helpText.value = " " + [
+                hk("up/dn", "comments"), hk("left/right", otherLabel), hk("enter", "edit"),
+                hk("v", "viewed"), hk("c", "clip"), hk("o", "open"), hk("w", "web"),
+                hk("esc", "back"), hk("r", "resolve"), hk("s", "solved"),
+            ].join(C.dim("  ")) + "\n "
         }
     }
 
@@ -678,6 +694,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "/") { searchMode = true; searchQuery = ""; searchResults = []; searchResultIdx = 0; helpText.value = ` Search: _\n ` }
         else if (k === "r") { resolveCurrentItem() }
         else if (k === "u") { unresolveCurrentItem() }
+        else if (k === "v") { markCurrentItemViewed() }
         else if (k === "s") { setCurrentItemStatus("solved") }
         else if (k === "S") { setCurrentItemStatus("unaddressed") }
         else if (k === "c") { clipCurrentItem() }
@@ -733,6 +750,7 @@ export async function launchTUI(): Promise<void> {
         else if (e.ctrl && k === "z") { if (performUndo()) renderDetailView() }
         else if (k === "c") { clipCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
+        else if (k === "v") { markCurrentItemViewed(); renderDetailView() }
         else if (k === "s") { setCurrentItemStatus("solved"); renderDetailView() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
@@ -772,6 +790,14 @@ export async function launchTUI(): Promise<void> {
         const { item, origIndex } = visibleItems[sel]
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
         item.status = status; saveState(path, state!).catch(() => {}); renderListView()
+    }
+
+    function markCurrentItemViewed(): void {
+        const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+        const { item, origIndex } = visibleItems[sel]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
+        item.status = item.status === "unseen" ? "unaddressed" : "unseen"
+        saveState(path, state!).catch(() => {}); renderListView()
     }
 
     function setCurrentItemCategory(category: ItemCategory): void {
