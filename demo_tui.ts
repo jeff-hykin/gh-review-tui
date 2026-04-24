@@ -722,8 +722,14 @@ function renderDetailView(): void {
         bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│"))
     }
     bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))
-    bodyLines.push("")
-    bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
+    // Tab buttons between frames: highlighted when active, dim when inactive
+    const notesBtn = target === "notes"
+        ? crayon.bgHex(BLUE).hex(BG_SURF).bold(" NOTES ")
+        : C.dim(" notes ")
+    const replyBtn = target === "draft"
+        ? crayon.bgHex(BLUE).hex(BG_SURF).bold(" REPLY ")
+        : C.dim(" reply ")
+    bodyLines.push(` ${notesBtn}  ${replyBtn}  ${C.dim("← →  switch")}`)
 
     bodyText.value = padLines(bodyLines, BODY_LINES)
 
