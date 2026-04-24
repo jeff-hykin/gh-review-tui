@@ -542,7 +542,14 @@ function renderListView(): void {
     editorFrame.visible.value = false
 
     const pr = state.pr
-    headerText.value = ` PR #${pr.number}: ${truncate(pr.title, contentW - 15)}  (${visibleItems.length} items)`
+    // Progress summary
+    const allItems = state.items
+    const totalCount = allItems.length
+    const resolvedCount = allItems.filter(it => computeDisplayStatus(it, state.gh_user) === "resolved").length
+    const pendingCount = visibleItems.filter(v => computeDisplayStatus(v.item, state.gh_user) === "pending").length
+    const unseenCount = visibleItems.filter(v => v.item.status === "unseen").length
+    const progressStr = `✓${resolvedCount}/${totalCount}  ★${unseenCount} unseen  ⏳${pendingCount} waiting`
+    headerText.value = ` PR #${pr.number}: ${truncate(pr.title, contentW - 50)}  ${progressStr}`
 
     const lines: string[] = []
     const sel = selectedIndex.peek()
@@ -573,7 +580,8 @@ function renderListView(): void {
         const flagParts: string[] = []
         if (item.draft_response) { flagParts.push("D") }
         if (item.notes) { flagParts.push("N") }
-        if (ds === "pending") { flagParts.push("wait") }
+        const isPending = ds === "pending"
+        if (isPending) { flagParts.push("⏳ WAITING") }
 
         const file = shortFile(item)
         const snippet = itemSnippet(item, contentW - 8)
@@ -596,8 +604,11 @@ function renderListView(): void {
         // ── Line 2: snippet + (right-aligned) flags ──
         const indent = baseFg("       ")
         const snippetStyled = baseFg(snippet)
+        const flagColor = isPending
+            ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange)
+            : (isSelected ? C.selCyan : C.cyan)
         const flagStyled = flagParts.length
-            ? (isSelected ? C.selCyan : C.cyan)(` ${flagParts.join(" ")} `)
+            ? flagColor(` ${flagParts.join(" ")} `)
             : ""
 
         const l2Left = `       ${snippet}`
@@ -613,7 +624,7 @@ function renderListView(): void {
     }
 
     bodyText.value = padLines(lines, BODY_LINES)
-    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
+    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
 
     editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
@@ -740,7 +751,9 @@ function renderDetailView(): void {
     const stBadge = statusColor(item.status, false)(statusLabel(item.status))
     const catBadge = catColor(item.category, false)(catLabel(item.category))
     const resolvedBadge = (item.type === "comment" && item.resolved) ? C.green(" ✓ resolved ") : ""
-    const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}`
+    const detailDs = computeDisplayStatus(item, state.gh_user)
+    const pendingBadge = detailDs === "pending" ? C.orange(" ⏳ WAITING ") : ""
+    const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}${pendingBadge}`
 
     const bodyLines: string[] = []
     bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
@@ -804,7 +817,7 @@ function renderDetailView(): void {
         editor.state.value = "base"
         // Move editor off-screen so it doesn't bleed through the overlay
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-        helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  esc back  r resolve  s solved\n `
+        helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  w web  esc back  r resolve  s solved\n `
     }
 }
 
@@ -818,6 +831,22 @@ async function openCurrentItem(): Promise<void> {
     const { default: $ } = await import("jsr:@david/dax@0.42")
     const target = item.line > 0 ? `${item.file}:${item.line}` : item.file
     await $`code -g ${target}`.noThrow()
+}
+
+async function openInBrowser(): Promise<void> {
+    const sel = selectedIndex.peek()
+    if (sel >= visibleItems.length) return
+    const { item } = visibleItems[sel]
+    // Build the GitHub URL for this comment thread
+    const prUrl = state.pr.url
+    if (item.type === "comment" && item.thread_id) {
+        const url = `${prUrl}/files#r${item.thread_id}`
+        const { default: $ } = await import("jsr:@david/dax@0.42")
+        await $`open ${url}`.noThrow()
+    } else if (item.type === "ci_failure") {
+        const { default: $ } = await import("jsr:@david/dax@0.42")
+        await $`open ${(item as any).url}`.noThrow()
+    }
 }
 
 // ── Editor helpers ───────────────────────────────────────────────────────
@@ -900,6 +929,7 @@ function handleListKey(e: any): void {
     else if (k === "S") { visibleItems[selectedIndex.peek()].item.status = "unaddressed"; renderListView() }
     else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
     else if (k === "o") { openCurrentItem() }
+    else if (k === "w") { openInBrowser() }
     else if (k === "A") {
         confirmingResolveAll = true
         const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
@@ -960,6 +990,8 @@ function handleDetailBrowseKey(e: any): void {
         copyToClipboard(generateClipboardContent(item, origIndex, state))
     } else if (k === "o") {
         openCurrentItem()
+    } else if (k === "w") {
+        openInBrowser()
     } else if (k === "r") {
         const { item } = visibleItems[selectedIndex.peek()]
         if (item.type === "comment") { item.resolved = true }

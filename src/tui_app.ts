@@ -111,7 +111,7 @@ const C = {
     fg: crayon.bgHex(BG).hex(FG), dim: crayon.bgHex(BG).hex(DIM),
     red: crayon.bgHex(BG).hex(RED), green: crayon.bgHex(BG).hex(GREEN),
     blue: crayon.bgHex(BG).hex(BLUE), cyan: crayon.bgHex(BG).hex(CYAN),
-    magenta: crayon.bgHex(BG).hex(MAGENTA), sep: crayon.bgHex(BG).hex(0x45475a),
+    magenta: crayon.bgHex(BG).hex(MAGENTA), orange: crayon.bgHex(BG).hex(ORANGE), sep: crayon.bgHex(BG).hex(0x45475a),
     selFg: crayon.bgHex(BG_SEL).hex(FG), selDim: crayon.bgHex(BG_SEL).hex(DIM),
     selCyan: crayon.bgHex(BG_SEL).hex(CYAN),
     badgeNew: crayon.bgHex(YELLOW).hex(BG_SURF).bold, badgeOk: crayon.bgHex(GREEN).hex(BG_SURF),
@@ -352,7 +352,12 @@ export async function launchTUI(): Promise<void> {
         editorFrame.visible.value = false
 
         const pr = state!.pr
-        headerText.value = ` PR #${pr.number}: ${truncate(pr.title, contentW - 15)}  (${visibleItems.length} items)`
+        const totalCount = state!.items.length
+        const resolvedCount = state!.items.filter(it => computeDisplayStatus(it, state!.gh_user) === "resolved").length
+        const pendingCount = visibleItems.filter(v => computeDisplayStatus(v.item, state!.gh_user) === "pending").length
+        const unseenCount = visibleItems.filter(v => v.item.status === "unseen").length
+        const progressStr = `✓${resolvedCount}/${totalCount}  ★${unseenCount} unseen  ⏳${pendingCount} waiting`
+        headerText.value = ` PR #${pr.number}: ${truncate(pr.title, contentW - 50)}  ${progressStr}`
 
         const lines: string[] = []
         const sel = selectedIndex.peek()
@@ -376,7 +381,8 @@ export async function launchTUI(): Promise<void> {
             const flagParts: string[] = []
             if (item.draft_response) { flagParts.push("D") }
             if (item.notes) { flagParts.push("N") }
-            if (ds === "pending") { flagParts.push("wait") }
+            const isPending = ds === "pending"
+            if (isPending) { flagParts.push("⏳ WAITING") }
 
             const file = shortFile(item)
             const snippet = itemSnippet(item, contentW - 8)
@@ -395,14 +401,15 @@ export async function launchTUI(): Promise<void> {
             const l2L = `       ${snippet}`
             const l2R = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
             const g2 = Math.max(1, contentW - tuiTextWidth(l2L) - tuiTextWidth(l2R))
-            const flagStyled = flagParts.length ? (isSelected ? C.selCyan : C.cyan)(` ${flagParts.join(" ")} `) : ""
+            const flagColor = isPending ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange) : (isSelected ? C.selCyan : C.cyan)
+            const flagStyled = flagParts.length ? flagColor(` ${flagParts.join(" ")} `) : ""
             lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
             lines.push(C.sep(`${"─".repeat(contentW)}`))
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
-        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
+        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -507,7 +514,9 @@ export async function launchTUI(): Promise<void> {
         const stBadge = statusColor(item.status, false)(statusLabel(item.status))
         const catBadge = catColor(item.category, false)(catLabel(item.category))
         const resolvedBadge = (item.type === "comment" && item.resolved) ? C.green(" ✓ resolved ") : ""
-        const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}`
+        const detailDs = computeDisplayStatus(item, state!.gh_user)
+        const pendingBadge = detailDs === "pending" ? C.orange(" ⏳ WAITING ") : ""
+        const statusBarText = ` ${stBadge}  ${catBadge}  ${resolvedBadge}${pendingBadge}`
 
         const bodyLines: string[] = []
         bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
@@ -557,7 +566,7 @@ export async function launchTUI(): Promise<void> {
             editorOverlay.visible.value = true
             editor.state.value = "base"
             editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-            helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  esc back  r resolve  s solved\n `
+            helpText.value = ` up/dn comments  left/right ${otherLabel}  enter edit  c clip  o open  w web  esc back  r resolve  s solved\n `
         }
     }
 
@@ -630,6 +639,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "S") { setCurrentItemStatus("unaddressed") }
         else if (k === "c") { clipCurrentItem() }
         else if (k === "o") { openCurrentItem() }
+        else if (k === "w") { openInBrowser() }
         else if (k === "A") {
             confirmingResolveAll = true
             const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
@@ -681,6 +691,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "s") { setCurrentItemStatus("solved"); renderDetailView() }
         else if (k === "o") { openCurrentItem() }
+        else if (k === "w") { openInBrowser() }
     }
 
     function handleDetailEditKey(e: any): void {
@@ -732,6 +743,20 @@ export async function launchTUI(): Promise<void> {
         const { default: $ } = await import("jsr:@david/dax@0.42")
         const target = item.line > 0 ? `${item.file}:${item.line}` : item.file
         await $`code -g ${target}`.noThrow()
+    }
+
+    async function openInBrowser(): Promise<void> {
+        const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+        const { item } = visibleItems[sel]
+        const prUrl = state!.pr.url
+        const { default: $ } = await import("jsr:@david/dax@0.42")
+        if (item.type === "comment" && item.thread_id) {
+            await $`open ${prUrl}/files#r${item.thread_id}`.noThrow()
+        } else if (item.type === "ci_failure") {
+            await $`open ${item.url}`.noThrow()
+        } else {
+            await $`open ${prUrl}`.noThrow()
+        }
     }
 
     async function sendCurrentDraft(): Promise<void> {
