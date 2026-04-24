@@ -224,6 +224,7 @@ new Label({
 
 const splitRow = Math.floor(termH * 0.55) + PAD_TOP
 const editorHeight = termH - splitRow - 3  // -3: help bar (2) + frame bottom border (1)
+const COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
 
 // ── Word-jump helpers ───────────────────────────────────────────────────
 
@@ -784,7 +785,7 @@ function renderDetailView(): void {
 
     // Scroll and build visible portion
     // commentAreaHeight is the visible lines inside the frame (minus 2 for frame borders)
-    const commentAreaHeight = splitRow - 2 - PAD_TOP - 2
+    const commentAreaHeight = COMMENT_AREA_HEIGHT
     const scrollOff = commentScrollOffset.peek()
     const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
@@ -961,13 +962,31 @@ function handleDetailBrowseKey(e: any): void {
         renderListView()
     } else if (k === "up") {
         const off = commentScrollOffset.peek()
+        // Find the previous comment that starts before the current scroll position
         const prev = detailCommentOffsets.filter(r => r < off)
-        commentScrollOffset.value = prev.length > 0 ? prev[prev.length - 1] : 0
+        if (prev.length > 0) {
+            const target = prev[prev.length - 1]
+            // Scroll just enough to show the target at the top
+            commentScrollOffset.value = target
+        } else {
+            commentScrollOffset.value = 0
+        }
         renderDetailView()
     } else if (k === "down") {
         const off = commentScrollOffset.peek()
+        const visibleEnd = off + COMMENT_AREA_HEIGHT
+        // Find the next comment that starts after the current scroll position
         const next = detailCommentOffsets.find(r => r > off)
-        if (next !== undefined) { commentScrollOffset.value = next }
+        if (next !== undefined) {
+            // If the next comment header is already visible, just scroll a few lines
+            // to bring it near the top (with 1 line of context from previous)
+            if (next < visibleEnd) {
+                commentScrollOffset.value = Math.max(0, next - 1)
+            } else {
+                // Not visible — scroll to show it at the top
+                commentScrollOffset.value = Math.max(0, next - 1)
+            }
+        }
         renderDetailView()
     } else if (k === "left" || k === "right") {
         saveEditorText()

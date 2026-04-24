@@ -221,6 +221,7 @@ export async function launchTUI(): Promise<void> {
 
     const splitRow = Math.floor(termH * 0.55) + PAD_TOP
     const editorHeight = termH - splitRow - 3
+    const COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
 
     const editor = new TextBox({
         parent: tui,
@@ -527,7 +528,7 @@ export async function launchTUI(): Promise<void> {
 
         detailCommentOffsets = authorRows.map(r => r.row)
 
-        const commentAreaHeight = splitRow - 2 - PAD_TOP - 2
+        const commentAreaHeight = COMMENT_AREA_HEIGHT
         const scrollOff = commentScrollOffset.peek()
         const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
@@ -675,12 +676,18 @@ export async function launchTUI(): Promise<void> {
         else if (k === "up") {
             const off = commentScrollOffset.peek()
             const prev = detailCommentOffsets.filter(r => r < off)
-            commentScrollOffset.value = prev.length > 0 ? prev[prev.length - 1] : 0
+            if (prev.length > 0) {
+                commentScrollOffset.value = prev[prev.length - 1]
+            } else {
+                commentScrollOffset.value = 0
+            }
             renderDetailView()
         } else if (k === "down") {
             const off = commentScrollOffset.peek()
             const next = detailCommentOffsets.find(r => r > off)
-            if (next !== undefined) { commentScrollOffset.value = next }
+            if (next !== undefined) {
+                commentScrollOffset.value = Math.max(0, next - 1)
+            }
             renderDetailView()
         } else if (k === "left" || k === "right") {
             saveEditorText()
