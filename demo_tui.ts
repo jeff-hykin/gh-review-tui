@@ -369,18 +369,6 @@ const editor = new TextBox({
 
 // ── Detail view frames ──────────────────────────────────────────────────
 
-// Comment panel frame (inset by 1 from edges to leave room for frame chars)
-const commentFrameRect = new Signal<any>({ column: 2, row: 2, width: contentW - 2, height: splitRow - 4 })
-const commentFrameStyle = crayon.bgHex(BG).hex(BLUE)
-const commentFrame = new Frame({
-    parent: tui,
-    charMap: "rounded",
-    theme: { base: commentFrameStyle, focused: commentFrameStyle, active: commentFrameStyle, disabled: commentFrameStyle },
-    rectangle: commentFrameRect,
-    zIndex: 7,
-})
-commentFrame.visible.value = false
-
 // Editor panel frame
 const editorFrameRect = new Signal<any>({ column: 2, row: splitRow + 1, width: contentW - 2, height: editorHeight })
 const editorFrameStyle = crayon.bgHex(BG).hex(DIM)
@@ -481,7 +469,6 @@ function renderListView(): void {
     log("renderListView")
     editorOverlay.visible.value = false
     editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-    commentFrame.visible.value = false
     editorFrame.visible.value = false
 
     const pr = state.pr
@@ -646,49 +633,42 @@ function renderDetailView(): void {
     const scrollOff = commentScrollOffset.peek()
     const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
-    // Build body: blank line (frame top border row), then comment content, then tab bar
-    const bodyLines: string[] = [" "]  // row 0 = behind frame top border
-    for (const line of scrolled) { bodyLines.push(line) }
-    while (bodyLines.length < commentAreaHeight + 1) { bodyLines.push(" ") }
-    bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
-
-    bodyText.value = padLines(bodyLines, BODY_LINES)
-
-    // Overlay row offset: +1 for the blank line prepended above
-    const ovRowBase = BODY_ROW + 1
-
-    // Inline ANSI colors for author names, separators, and error lines
-
-    // Re-style author lines in bodyLines with inline ANSI colors
+    // Apply inline colors to author/separator/error lines
     for (const { row: srcRow, author, date } of authorRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        const bodyIdx = visRow + 1  // +1 for the blank line prepended
         if (author === "CI") {
-            bodyLines[bodyIdx] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
+            scrolled[visRow] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
         } else {
-            const h = authorHue(author)
-            bodyLines[bodyIdx] = crayon.hex(h).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
+            scrolled[visRow] = crayon.hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
         }
     }
-
-    // Re-style separator lines with inline dim color
     for (const srcRow of sepRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        const bodyIdx = visRow + 1
-        bodyLines[bodyIdx] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
+        scrolled[visRow] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
     }
-
-    // Re-style FAILED lines with inline red
     for (const srcRow of failedRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        const bodyIdx = visRow + 1
-        bodyLines[bodyIdx] = crayon.hex(RED)(commentLines[srcRow] ?? "")
+        scrolled[visRow] = crayon.hex(RED)(commentLines[srcRow] ?? "")
     }
 
-    // Re-set body text with inline colors
+    // Build body with inline frame borders (no Frame component needed)
+    const dim = crayon.hex(BLUE)
+    const frameW = contentW - 2
+    const bodyLines: string[] = []
+    bodyLines.push(dim(`╭${"─".repeat(frameW)}╮`))
+    for (const line of scrolled) {
+        bodyLines.push(dim("│") + (line || " ".repeat(frameW)) + dim("│"))
+    }
+    while (bodyLines.length < commentAreaHeight + 1) {
+        bodyLines.push(dim("│") + " ".repeat(frameW) + dim("│"))
+    }
+    bodyLines.push(dim(`╰${"─".repeat(frameW)}╯`))
+    bodyLines.push("")
+    bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
+
     bodyText.value = padLines(bodyLines, BODY_LINES)
 
     // No author/separator/error overlays needed for detail view anymore
@@ -696,19 +676,13 @@ function renderDetailView(): void {
 
     // ── Frames and editor position ──
 
-    // Comment frame: surrounds the body text in detail view
-    commentFrameRect.value = { column: PAD_LEFT + 1, row: BODY_ROW + 1, width: contentW - 2, height: commentAreaHeight }
-    commentFrame.visible.value = true
-
     // Editor frame and position
     const edRow = splitRow + 1
     editor.rectangle.value = { column: PAD_LEFT + 1, row: edRow, width: contentW - 2, height: editorHeight - 1 }
     editorFrameRect.value = { column: PAD_LEFT + 1, row: edRow, width: contentW - 2, height: editorHeight - 1 }
     editorFrame.visible.value = true
 
-    // Focus colors: active panel gets accent color, inactive gets dim
     if (isEditing) {
-        setFrameColor(commentFrame, DIM)
         setFrameColor(editorFrame, CYAN)
         editorOverlay.visible.value = false
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -716,7 +690,6 @@ function renderDetailView(): void {
         const editLabel = target === "notes" ? "NOTES" : "REPLY"
         helpText.value = ` Editing ${editLabel}...  cmd+enter submit reply  esc back to thread\n `
     } else {
-        setFrameColor(commentFrame, BLUE)
         setFrameColor(editorFrame, DIM)
         // Show "press enter" overlay on top of editor with tab label
         const browseLabel = target === "notes" ? "NOTES" : "REPLY"

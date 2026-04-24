@@ -288,15 +288,6 @@ export async function launchTUI(): Promise<void> {
 
     // ── Detail view frames ──────────────────────────────────────────
 
-    const commentFrameRect = new Signal<any>({ column: 2, row: 2, width: contentW - 2, height: splitRow - 4 })
-    const cfs = crayon.bgHex(BG).hex(BLUE)
-    const commentFrame = new Frame({
-        parent: tui, charMap: "rounded",
-        theme: { base: cfs, focused: cfs, active: cfs, disabled: cfs },
-        rectangle: commentFrameRect, zIndex: 7,
-    })
-    commentFrame.visible.value = false
-
     const editorFrameRect = new Signal<any>({ column: 2, row: splitRow + 1, width: contentW - 2, height: editorHeight })
     const efs = crayon.bgHex(BG).hex(DIM)
     const editorFrame = new Frame({
@@ -318,7 +309,6 @@ export async function launchTUI(): Promise<void> {
         log("renderListView")
         editorOverlay.visible.value = false
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
-        commentFrame.visible.value = false
         editorFrame.visible.value = false
 
         const pr = state!.pr
@@ -447,51 +437,46 @@ export async function launchTUI(): Promise<void> {
         const scrollOff = commentScrollOffset.peek()
         const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
-        const bodyLines: string[] = [" "]
-        for (const line of scrolled) { bodyLines.push(line) }
-        while (bodyLines.length < commentAreaHeight + 1) { bodyLines.push(" ") }
-        bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
-        bodyText.value = padLines(bodyLines, BODY_LINES)
-
-        const ovRowBase = BODY_ROW + 1
-
         // Inline ANSI colors for author names, separators, and error lines
-
         for (const { row: srcRow, author, date } of authorRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            const bodyIdx = visRow + 1
             if (author === "CI") {
-                bodyLines[bodyIdx] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
+                scrolled[visRow] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
             } else {
-                bodyLines[bodyIdx] = crayon.hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
+                scrolled[visRow] = crayon.hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
             }
         }
-
         for (const srcRow of sepRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            bodyLines[visRow + 1] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
+            scrolled[visRow] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
         }
-
         for (const srcRow of failedRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            bodyLines[visRow + 1] = crayon.hex(RED)(commentLines[srcRow] ?? "")
+            scrolled[visRow] = crayon.hex(RED)(commentLines[srcRow] ?? "")
         }
 
+        // Build body with inline frame borders
+        const frameDim = crayon.hex(BLUE)
+        const frameW = contentW - 2
+        const bodyLines: string[] = []
+        bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
+        for (const line of scrolled) { bodyLines.push(frameDim("│") + (line || " ".repeat(frameW)) + frameDim("│")) }
+        while (bodyLines.length < commentAreaHeight + 1) { bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│")) }
+        bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))
+        bodyLines.push("")
+        bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
         bodyText.value = padLines(bodyLines, BODY_LINES)
 
-        // Frames and editor position
-        commentFrameRect.value = { column: PAD_LEFT + 1, row: BODY_ROW + 1, width: contentW - 2, height: commentAreaHeight }
-        commentFrame.visible.value = true
+        // Editor frame and position
         const edRow = splitRow + 1
         editor.rectangle.value = { column: PAD_LEFT + 1, row: edRow, width: contentW - 2, height: editorHeight - 1 }
         editorFrameRect.value = { column: PAD_LEFT + 1, row: edRow, width: contentW - 2, height: editorHeight - 1 }
         editorFrame.visible.value = true
 
         if (isEditing) {
-            setFrameColor(commentFrame, DIM)
             setFrameColor(editorFrame, CYAN)
             editorOverlay.visible.value = false
             editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -499,7 +484,6 @@ export async function launchTUI(): Promise<void> {
             const editLabel = target === "notes" ? "NOTES" : "REPLY"
             helpText.value = ` Editing ${editLabel}...  cmd+enter submit reply  esc back to thread\n `
         } else {
-            setFrameColor(commentFrame, BLUE)
             setFrameColor(editorFrame, DIM)
             const browseLabel = target === "notes" ? "NOTES" : "REPLY"
             const overlayLines: string[] = []
