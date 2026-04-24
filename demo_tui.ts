@@ -421,9 +421,30 @@ const editorOverlay = new Label({
 
 log("Components created")
 
-// ── Inline color helpers ────────────────────────────────────────────────
-// All coloring uses inline ANSI via crayon, embedded directly in Label text.
-// No overlay Labels needed.
+// ── Centralized color palette ───────────────────────────────────────────
+// All inline styles include bgHex(BG) to ensure consistent background.
+const C = {
+    fg:        crayon.bgHex(BG).hex(FG),
+    dim:       crayon.bgHex(BG).hex(DIM),
+    red:       crayon.bgHex(BG).hex(RED),
+    green:     crayon.bgHex(BG).hex(GREEN),
+    blue:      crayon.bgHex(BG).hex(BLUE),
+    cyan:      crayon.bgHex(BG).hex(CYAN),
+    magenta:   crayon.bgHex(BG).hex(MAGENTA),
+    yellow:    crayon.bgHex(BG).hex(YELLOW),
+    orange:    crayon.bgHex(BG).hex(ORANGE),
+    sep:       crayon.bgHex(BG).hex(0x45475a),
+    // Selected row variants
+    selFg:     crayon.bgHex(BG_SEL).hex(FG),
+    selDim:    crayon.bgHex(BG_SEL).hex(DIM),
+    selCyan:   crayon.bgHex(BG_SEL).hex(CYAN),
+    // Status badge colors (inverted bg)
+    badgeNew:  crayon.bgHex(YELLOW).hex(BG_SURF).bold,
+    badgeOk:   crayon.bgHex(GREEN).hex(BG_SURF),
+    badgeAut:  crayon.bgHex(ORANGE).hex(BG_SURF),
+    badgeDim:  crayon.bgHex(BG).hex(DIM),
+    badgeSelDim: crayon.bgHex(BG_SEL).hex(DIM),
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -446,19 +467,18 @@ function catLabel(c: ItemCategory): string {
     }
 }
 
-function statusColor(s: ItemStatus, _sel: boolean): any {
-    if (s === "unseen")  return crayon.bgHex(YELLOW).hex(BG_SURF).bold
-    if (s === "solved")  return crayon.bgHex(GREEN).hex(BG_SURF)
-    if (s === "auto_solved") return crayon.bgHex(ORANGE).hex(BG_SURF)
-    return crayon.bgHex(_sel ? BG_SEL : BG).hex(DIM)
+function statusColor(s: ItemStatus, sel: boolean): any {
+    if (s === "unseen")  return C.badgeNew
+    if (s === "solved")  return C.badgeOk
+    if (s === "auto_solved") return C.badgeAut
+    return sel ? C.badgeSelDim : C.badgeDim
 }
 
 function catColor(c: ItemCategory, sel: boolean): any {
-    const bg = sel ? BG_SEL : BG
-    if (c === "simple_fix")   return crayon.bgHex(bg).hex(GREEN)
-    if (c === "discussion")   return crayon.bgHex(bg).hex(MAGENTA)
-    if (c === "large_change") return crayon.bgHex(bg).hex(RED)
-    return crayon.bgHex(bg).hex(DIM)
+    if (c === "simple_fix")   return sel ? C.selFg : C.green  // green for fix
+    if (c === "discussion")   return sel ? crayon.bgHex(BG_SEL).hex(MAGENTA) : C.magenta
+    if (c === "large_change") return sel ? crayon.bgHex(BG_SEL).hex(RED) : C.red
+    return sel ? C.selDim : C.dim
 }
 
 function shortFile(item: ReviewItem): string {
@@ -505,7 +525,7 @@ function renderListView(): void {
         const isSelected = i === sel
         const ds = computeDisplayStatus(item, state.gh_user)
         const bg = isSelected ? BG_SEL : BG
-        const baseFg = crayon.bgHex(bg).hex(FG)
+        const baseFg = isSelected ? C.selFg : C.fg
 
         // Author info
         let authName = ""
@@ -531,7 +551,7 @@ function renderListView(): void {
         const ptr = isSelected ? baseFg(" ▸") : baseFg("  ")
         const stStyled = statusColor(item.status, isSelected)(statusLabel(item.status))
         const authStyled = crayon.bgHex(bg).hex(hue)(`${authorTag(authName)} ${authName}`)
-        const fileStyled = file ? crayon.bgHex(bg).hex(DIM)(file) : ""
+        const fileStyled = file ? (isSelected ? C.selDim : C.dim)(file) : ""
         const catStyled = catColor(item.category, isSelected)(catLabel(item.category))
 
         // Calculate gap (use plain-text lengths for spacing)
@@ -546,7 +566,7 @@ function renderListView(): void {
         const indent = baseFg("       ")
         const snippetStyled = baseFg(snippet)
         const flagStyled = flagParts.length
-            ? crayon.bgHex(bg).hex(CYAN)(` ${flagParts.join(" ")} `)
+            ? (isSelected ? C.selCyan : C.cyan)(` ${flagParts.join(" ")} `)
             : ""
 
         const l2Left = `       ${snippet}`
@@ -556,7 +576,7 @@ function renderListView(): void {
         const line2 = indent + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
 
         // ── Line 3: separator ──
-        const line3 = crayon.bgHex(BG).hex(0x45475a)(`  ${"─".repeat(Math.min(contentW - 4, 60))}`)
+        const line3 = C.sep(`  ${"─".repeat(Math.min(contentW - 4, 60))}`)
 
         lines.push(line1, line2, line3)
     }
@@ -652,29 +672,29 @@ function renderDetailView(): void {
     const scrollOff = commentScrollOffset.peek()
     const scrolled = commentLines.slice(scrollOff, scrollOff + commentAreaHeight)
 
-    // Apply inline colors to author/separator/error lines
+    // Apply inline colors to author/separator/error lines (always include bgHex(BG) for consistent background)
     for (const { row: srcRow, author, date } of authorRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
         if (author === "CI") {
-            scrolled[visRow] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
+            scrolled[visRow] = C.red.bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
         } else {
-            scrolled[visRow] = crayon.hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
+            scrolled[visRow] = crayon.bgHex(BG).hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + C.dim(`  ${date}`)
         }
     }
     for (const srcRow of sepRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        scrolled[visRow] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
+        scrolled[visRow] = C.sep(` ${"─".repeat(panelW + 2)}`)
     }
     for (const srcRow of failedRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        scrolled[visRow] = crayon.hex(RED)(commentLines[srcRow] ?? "")
+        scrolled[visRow] = C.red(commentLines[srcRow] ?? "")
     }
 
     // Build body with inline frame borders (no Frame component needed)
-    const frameDim = isEditing ? crayon.hex(DIM) : crayon.hex(BLUE)
+    const frameDim = isEditing ? crayon.bgHex(BG).hex(DIM) : crayon.bgHex(BG).hex(BLUE)
     const frameW = contentW - 2
 
     // Pad a line with possible inline ANSI to exactly targetW visible chars
