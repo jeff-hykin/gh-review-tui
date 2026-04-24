@@ -445,7 +445,7 @@ export async function launchTUI(): Promise<void> {
             else if (item.type === "ci_failure") { authName = "CI Failure" }
             else if (item.type === "merge_conflict") { authName = "Merge Conflict" }
             const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
-            ovShow(io.author, PAD_LEFT + 9, row1, Math.min(authName.length + 3, 22), `${authorTag(authName)} ${authName}`, crayon.bgHex(bg).hex(hue))
+            ovShow(io.author, PAD_LEFT + 10, row1, Math.min(authName.length + 3, 22), `${authorTag(authName)} ${authName}`, crayon.bgHex(bg).hex(hue))
 
             const file = shortFile(item)
             if (file) { const fw = Math.min(file.length + 2, 35); ovShow(io.file, catCol - fw - 1, row1, fw, `${file}  `, crayon.bgHex(bg).hex(DIM)) }

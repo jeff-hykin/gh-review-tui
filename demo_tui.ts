@@ -670,7 +670,7 @@ function renderListView(): void {
         } else if (item.type === "merge_conflict") {
             authName = "Merge Conflict"
         }
-        const authCol = PAD_LEFT + 9
+        const authCol = PAD_LEFT + 10  // "PP SSS  " = 2+1+5+2 = 10 chars before author tag
         const authW = Math.min(authName.length + 3, 22)
         const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
         ovShow(io.author, authCol, row1, authW, `${authorTag(authName)} ${authName}`, crayon.bgHex(bg).hex(hue))
