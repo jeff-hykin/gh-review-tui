@@ -187,6 +187,37 @@ export async function launchTUI(): Promise<void> {
     const commentScrollOffset = new Signal(0)
     let confirmingResolveAll = false
 
+    // Undo stack
+    type UndoAction = { type: "status"; itemIndex: number; oldValue: string } | { type: "category"; itemIndex: number; oldValue: string } | { type: "resolve"; itemIndex: number; oldValue: boolean } | { type: "text"; oldText: string; field: "notes" | "draft_response"; itemIndex: number }
+    const undoStack: UndoAction[] = []
+    function pushUndo(a: UndoAction): void { undoStack.push(a); if (undoStack.length > 50) undoStack.shift() }
+    function performUndo(): boolean {
+        const a = undoStack.pop(); if (!a) return false
+        const item = state!.items[a.itemIndex]; if (!item) return false
+        if (a.type === "status") item.status = a.oldValue as any
+        else if (a.type === "category") item.category = a.oldValue as any
+        else if (a.type === "resolve" && item.type === "comment") item.resolved = a.oldValue
+        else if (a.type === "text") { if (a.field === "notes") item.notes = a.oldText; else item.draft_response = a.oldText }
+        visibleItems = getVisibleItems()
+        if (selectedIndex.peek() >= visibleItems.length) selectedIndex.value = Math.max(0, visibleItems.length - 1)
+        saveState(path, state!).catch(() => {})
+        return true
+    }
+
+    // Search state
+    let searchMode = false, searchQuery = "", searchResults: number[] = [], searchResultIdx = 0
+    function doSearch(): void {
+        const q = searchQuery.toLowerCase(); searchResults = []
+        for (let i = 0; i < visibleItems.length; i++) {
+            const { item } = visibleItems[i]; let text = ""
+            if (item.type === "comment") { text = item.comments.map(c => `${c.author} ${c.body}`).join(" ") + ` ${item.file}` }
+            else if (item.type === "ci_failure") { text = `${item.check_name} ${item.error_summary ?? ""}` }
+            text += ` ${item.summary ?? ""} ${item.notes ?? ""}`
+            if (text.toLowerCase().includes(q)) searchResults.push(i)
+        }
+        searchResultIdx = 0
+    }
+
     let BODY_LINES = termH - 3 - PAD_TOP
     const LINES_PER_ITEM = 3
     let MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
@@ -409,7 +440,7 @@ export async function launchTUI(): Promise<void> {
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
-        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
+        helpText.value = " up/dn navigate  enter detail  r resolve  u unresolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n / search  ctrl+z undo  1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -598,6 +629,16 @@ export async function launchTUI(): Promise<void> {
 
     tui.on("keyPress", (event: any) => {
         log("key:", event.key, "ctrl:", event.ctrl, "meta:", event.meta, "mode:", mode.peek())
+        if (searchMode) {
+            const k = event.key
+            if (k === "escape") { searchMode = false; renderListView() }
+            else if (k === "return") { searchMode = false; if (searchResults.length > 0) selectedIndex.value = searchResults[searchResultIdx]; renderListView() }
+            else if (k === "backspace") { searchQuery = searchQuery.slice(0, -1); doSearch(); if (searchResults.length > 0) selectedIndex.value = searchResults[0]; renderListView(); helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches)\n ` }
+            else if (k === "tab") { if (searchResults.length > 0) { searchResultIdx = (searchResultIdx + 1) % searchResults.length; selectedIndex.value = searchResults[searchResultIdx]; renderListView() }; helpText.value = ` Search: ${searchQuery}_  (${searchResultIdx + 1}/${searchResults.length})\n ` }
+            else if (k === "space") { searchQuery += " "; doSearch(); if (searchResults.length > 0) selectedIndex.value = searchResults[0]; renderListView(); helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches)\n ` }
+            else if (k.length === 1 && !event.ctrl && !event.meta) { searchQuery += k; doSearch(); if (searchResults.length > 0) selectedIndex.value = searchResults[0]; renderListView(); helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches)\n ` }
+            return
+        }
         const m = mode.peek()
         if (m === "list") { handleListKey(event) }
         else if (m === "detail_browse") { handleDetailBrowseKey(event) }
@@ -633,6 +674,8 @@ export async function launchTUI(): Promise<void> {
         else if (k === "down") { const s = selectedIndex.peek(); if (s < visibleItems.length - 1) { selectedIndex.value = s + 1; renderListView() } }
         else if (k === "return") { mode.value = "detail_browse"; editTarget.value = "notes"; loadEditorText(); commentScrollOffset.value = 0; renderDetailView() }
         else if (k === "q" || k === "escape") { tui.destroy(); Deno.exit(0) }
+        else if (e.ctrl && k === "z") { if (performUndo()) renderListView() }
+        else if (k === "/") { searchMode = true; searchQuery = ""; searchResults = []; searchResultIdx = 0; helpText.value = ` Search: _\n ` }
         else if (k === "r") { resolveCurrentItem() }
         else if (k === "u") { unresolveCurrentItem() }
         else if (k === "s") { setCurrentItemStatus("solved") }
@@ -687,6 +730,7 @@ export async function launchTUI(): Promise<void> {
             editTarget.value = editTarget.peek() === "notes" ? "draft" : "notes"
             loadEditorText(); renderDetailView()
         } else if (k === "return") { mode.value = "detail_edit"; renderDetailView() }
+        else if (e.ctrl && k === "z") { if (performUndo()) renderDetailView() }
         else if (k === "c") { clipCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "s") { setCurrentItemStatus("solved"); renderDetailView() }
@@ -704,8 +748,9 @@ export async function launchTUI(): Promise<void> {
     async function resolveCurrentItem(): Promise<void> {
         const sel = selectedIndex.peek()
         if (sel >= visibleItems.length) return
-        const { item } = visibleItems[sel]
+        const { item, origIndex } = visibleItems[sel]
         if (item.type !== "comment" || !item.thread_node_id) return
+        pushUndo({ type: "resolve", itemIndex: origIndex, oldValue: item.resolved })
         const ok = await gh.resolveThread(item.thread_node_id)
         if (ok) {
             item.resolved = true; await saveState(path, state!)
@@ -717,18 +762,23 @@ export async function launchTUI(): Promise<void> {
 
     function unresolveCurrentItem(): void {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
-        const { item } = visibleItems[sel]; if (item.type !== "comment") return
+        const { item, origIndex } = visibleItems[sel]; if (item.type !== "comment") return
+        pushUndo({ type: "resolve", itemIndex: origIndex, oldValue: item.resolved })
         item.resolved = false; saveState(path, state!).catch(() => {}); visibleItems = getVisibleItems(); renderListView()
     }
 
     function setCurrentItemStatus(status: ItemStatus): void {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
-        visibleItems[sel].item.status = status; saveState(path, state!).catch(() => {}); renderListView()
+        const { item, origIndex } = visibleItems[sel]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
+        item.status = status; saveState(path, state!).catch(() => {}); renderListView()
     }
 
     function setCurrentItemCategory(category: ItemCategory): void {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
-        visibleItems[sel].item.category = category; saveState(path, state!).catch(() => {}); renderListView()
+        const { item, origIndex } = visibleItems[sel]
+        pushUndo({ type: "category", itemIndex: origIndex, oldValue: item.category })
+        item.category = category; saveState(path, state!).catch(() => {}); renderListView()
     }
 
     async function clipCurrentItem(): Promise<void> {

@@ -159,6 +159,58 @@ const commentScrollOffset = new Signal(0)
 let detailCommentOffsets: number[] = []
 let confirmingResolveAll = false
 
+// ── Undo system ─────────────────────────────────────────────────────────
+type UndoAction = {
+    type: "status"; itemIndex: number; oldValue: string; newValue: string
+} | {
+    type: "category"; itemIndex: number; oldValue: string; newValue: string
+} | {
+    type: "resolve"; itemIndex: number; oldValue: boolean
+} | {
+    type: "text"; oldText: string; field: "notes" | "draft_response"; itemIndex: number
+}
+
+const undoStack: UndoAction[] = []
+const MAX_UNDO = 50
+
+function pushUndo(action: UndoAction): void {
+    undoStack.push(action)
+    if (undoStack.length > MAX_UNDO) { undoStack.shift() }
+}
+
+function performUndo(): boolean {
+    const action = undoStack.pop()
+    if (!action) return false
+    const item = state.items[action.itemIndex]
+    if (!item) return false
+    switch (action.type) {
+        case "status":
+            item.status = action.oldValue as any
+            break
+        case "category":
+            item.category = action.oldValue as any
+            break
+        case "resolve":
+            if (item.type === "comment") { item.resolved = action.oldValue }
+            break
+        case "text":
+            if (action.field === "notes") { item.notes = action.oldText }
+            else { item.draft_response = action.oldText }
+            break
+    }
+    visibleItems = getVisibleItems()
+    if (selectedIndex.peek() >= visibleItems.length) {
+        selectedIndex.value = Math.max(0, visibleItems.length - 1)
+    }
+    return true
+}
+
+// ── Search state ────────────────────────────────────────────────────────
+let searchMode = false
+let searchQuery = ""
+let searchResults: number[] = []  // indices into visibleItems
+let searchResultIdx = 0
+
 function getVisibleItems(): { item: ReviewItem; origIndex: number }[] {
     return state.items
         .map((item, origIndex) => ({ item, origIndex }))
@@ -624,7 +676,7 @@ function renderListView(): void {
     }
 
     bodyText.value = padLines(lines, BODY_LINES)
-    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
+    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  w web  q quit\n / search  ctrl+z undo  1 fix  2 discuss  3 wontfix  4 large  0 unknown"
 
     editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
@@ -876,11 +928,74 @@ function saveEditorText(): void {
 
 tui.on("keyPress", (event: any) => {
     log("key:", event.key, "ctrl:", event.ctrl, "meta:", event.meta, "mode:", mode.peek())
+    // Search mode intercepts all keys
+    if (searchMode) {
+        handleSearchKey(event)
+        return
+    }
     const m = mode.peek()
     if (m === "list") { handleListKey(event) }
     else if (m === "detail_browse") { handleDetailBrowseKey(event) }
     else if (m === "detail_edit") { handleDetailEditKey(event) }
 })
+
+function doSearch(): void {
+    const q = searchQuery.toLowerCase()
+    searchResults = []
+    for (let i = 0; i < visibleItems.length; i++) {
+        const { item } = visibleItems[i]
+        let text = ""
+        if (item.type === "comment") {
+            text = item.comments.map(c => `${c.author} ${c.body}`).join(" ")
+            text += ` ${item.file}`
+        } else if (item.type === "ci_failure") {
+            text = `${item.check_name} ${item.error_summary ?? ""}`
+        }
+        text += ` ${item.summary ?? ""} ${item.notes ?? ""}`
+        if (text.toLowerCase().includes(q)) { searchResults.push(i) }
+    }
+    searchResultIdx = 0
+}
+
+function handleSearchKey(e: any): void {
+    const k = e.key
+    if (k === "escape") {
+        searchMode = false
+        renderListView()
+    } else if (k === "return") {
+        searchMode = false
+        if (searchResults.length > 0) {
+            selectedIndex.value = searchResults[searchResultIdx]
+        }
+        renderListView()
+    } else if (k === "backspace") {
+        searchQuery = searchQuery.slice(0, -1)
+        doSearch()
+        if (searchResults.length > 0) { selectedIndex.value = searchResults[0] }
+        renderListView()
+        helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches, enter to select, esc cancel)\n `
+    } else if (k === "tab" || (e.ctrl && k === "n")) {
+        // Next result
+        if (searchResults.length > 0) {
+            searchResultIdx = (searchResultIdx + 1) % searchResults.length
+            selectedIndex.value = searchResults[searchResultIdx]
+            renderListView()
+        }
+        helpText.value = ` Search: ${searchQuery}_  (${searchResultIdx + 1}/${searchResults.length} matches)\n `
+    } else if (k === "space") {
+        searchQuery += " "
+        doSearch()
+        if (searchResults.length > 0) { selectedIndex.value = searchResults[0] }
+        renderListView()
+        helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches)\n `
+    } else if (k.length === 1 && !e.ctrl && !e.meta) {
+        searchQuery += k
+        doSearch()
+        if (searchResults.length > 0) { selectedIndex.value = searchResults[0] }
+        renderListView()
+        helpText.value = ` Search: ${searchQuery}_  (${searchResults.length} matches)\n `
+    }
+}
 
 function handleListKey(e: any): void {
     const k = e.key
@@ -915,19 +1030,34 @@ function handleListKey(e: any): void {
         renderDetailView()
     } else if (k === "q" || k === "escape") {
         tui.destroy(); Deno.exit(0)
+    } else if (e.ctrl && k === "z") {
+        if (performUndo()) {
+            if (mode.peek() === "list") { renderListView() }
+            else { renderDetailView() }
+        }
+    } else if (k === "/") {
+        searchMode = true; searchQuery = ""; searchResults = []; searchResultIdx = 0
+        helpText.value = ` Search: _\n `
     } else if (visibleItems.length === 0) {
         return  // No items — ignore item-specific keys
     } else if (k === "r") {
-        const { item } = visibleItems[selectedIndex.peek()]
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
         if (item.type === "comment") {
+            pushUndo({ type: "resolve", itemIndex: origIndex, oldValue: item.resolved })
             item.resolved = true
             visibleItems = getVisibleItems()
             if (selectedIndex.peek() >= visibleItems.length) { selectedIndex.value = Math.max(0, visibleItems.length - 1) }
             renderListView()
         }
-    } else if (k === "s") { visibleItems[selectedIndex.peek()].item.status = "solved"; renderListView() }
-    else if (k === "S") { visibleItems[selectedIndex.peek()].item.status = "unaddressed"; renderListView() }
-    else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
+    } else if (k === "s") {
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "solved" })
+        item.status = "solved"; renderListView()
+    } else if (k === "S") {
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "unaddressed" })
+        item.status = "unaddressed"; renderListView()
+    } else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
     else if (k === "o") { openCurrentItem() }
     else if (k === "w") { openInBrowser() }
     else if (k === "A") {
@@ -935,11 +1065,12 @@ function handleListKey(e: any): void {
         const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
         helpText.value = ` Resolve all ${count} threads? Press y to confirm, any other key to cancel\n `
     }
-    else if (k === "1") { visibleItems[selectedIndex.peek()].item.category = "simple_fix"; renderListView() }
-    else if (k === "2") { visibleItems[selectedIndex.peek()].item.category = "discussion"; renderListView() }
-    else if (k === "3") { visibleItems[selectedIndex.peek()].item.category = "wontfix"; renderListView() }
-    else if (k === "4") { visibleItems[selectedIndex.peek()].item.category = "large_change"; renderListView() }
-    else if (k === "0") { visibleItems[selectedIndex.peek()].item.category = "unknown"; renderListView() }
+    else if (k === "1" || k === "2" || k === "3" || k === "4" || k === "0") {
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        const catMap: Record<string, string> = { "1": "simple_fix", "2": "discussion", "3": "wontfix", "4": "large_change", "0": "unknown" }
+        pushUndo({ type: "category", itemIndex: origIndex, oldValue: item.category, newValue: catMap[k] })
+        item.category = catMap[k] as any; renderListView()
+    }
 }
 
 function handleDetailBrowseKey(e: any): void {
@@ -992,12 +1123,19 @@ function handleDetailBrowseKey(e: any): void {
         openCurrentItem()
     } else if (k === "w") {
         openInBrowser()
+    } else if (e.ctrl && k === "z") {
+        if (performUndo()) { renderDetailView() }
     } else if (k === "r") {
-        const { item } = visibleItems[selectedIndex.peek()]
-        if (item.type === "comment") { item.resolved = true }
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        if (item.type === "comment") {
+            pushUndo({ type: "resolve", itemIndex: origIndex, oldValue: item.resolved })
+            item.resolved = true
+        }
         renderDetailView()
     } else if (k === "s") {
-        visibleItems[selectedIndex.peek()].item.status = "solved"
+        const { item, origIndex } = visibleItems[selectedIndex.peek()]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "solved" })
+        item.status = "solved"
         renderDetailView()
     }
 }
