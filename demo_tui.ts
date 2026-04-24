@@ -297,6 +297,25 @@ const editor = new TextBox({
             textLines[cur.y] = textLine.slice(0, cur.x)
             editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
         }
+        if (ctrl && key === "w") {
+            // Delete word left
+            const boundary = wordBoundaryLeft(textLine, cur.x)
+            textLines[cur.y] = textLine.slice(0, boundary) + textLine.slice(cur.x)
+            cur.x = boundary
+            editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
+        }
+        if (ctrl && key === "backspace") {
+            // Cmd+backspace: delete entire line (macOS sends ctrl+backspace for cmd+backspace)
+            if (textLines.length > 1) {
+                textLines.splice(cur.y, 1)
+                cur.y = Math.min(cur.y, textLines.length - 1)
+                cur.x = Math.min(cur.x, textLines[cur.y]?.length ?? 0)
+            } else {
+                textLines[0] = ""
+                cur.x = 0
+            }
+            editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
+        }
 
         // ── Alt/Option + arrow = word jump ──
         // macOS terminals send alt+left as meta+"b" (readline) or meta+"left" (xterm)

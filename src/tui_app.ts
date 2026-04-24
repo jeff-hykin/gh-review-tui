@@ -244,6 +244,12 @@ export async function launchTUI(): Promise<void> {
             if (ctrl && key === "left") { cur.x = 0; editor.cursorPosition.value = { ...cur }; return }
             if (ctrl && key === "right") { cur.x = textLine.length; editor.cursorPosition.value = { ...cur }; return }
             if (ctrl && key === "k") { textLines[cur.y] = textLine.slice(0, cur.x); editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return }
+            if (ctrl && key === "w") { const b = wordBoundaryLeft(textLine, cur.x); textLines[cur.y] = textLine.slice(0, b) + textLine.slice(cur.x); cur.x = b; editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return }
+            if (ctrl && key === "backspace") {
+                if (textLines.length > 1) { textLines.splice(cur.y, 1); cur.y = Math.min(cur.y, textLines.length - 1); cur.x = Math.min(cur.x, textLines[cur.y]?.length ?? 0) }
+                else { textLines[0] = ""; cur.x = 0 }
+                editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
+            }
             // Alt/Option + arrow
             if (meta && (key === "left" || key === "b")) { cur.x = wordBoundaryLeft(textLine, cur.x); editor.cursorPosition.value = { ...cur }; return }
             if (meta && (key === "right" || key === "f")) { cur.x = wordBoundaryRight(textLine, cur.x); editor.cursorPosition.value = { ...cur }; return }
