@@ -174,10 +174,10 @@ export async function launchTUI(): Promise<void> {
         await saveState(path, state)
     }
 
-    const { columns: termW, rows: termH } = Deno.consoleSize()
+    let { columns: termW, rows: termH } = Deno.consoleSize()
     const PAD_LEFT = 2
     const PAD_TOP = 1
-    const contentW = Math.min(termW - PAD_LEFT * 2, 118)
+    let contentW = Math.min(termW - PAD_LEFT * 2, 118)
     const BODY_ROW = 1 + PAD_TOP
     log("Launch TUI, size:", { termW, termH, contentW })
 
@@ -187,9 +187,9 @@ export async function launchTUI(): Promise<void> {
     const commentScrollOffset = new Signal(0)
     let confirmingResolveAll = false
 
-    const BODY_LINES = termH - 3 - PAD_TOP
+    let BODY_LINES = termH - 3 - PAD_TOP
     const LINES_PER_ITEM = 3
-    const MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
+    let MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
 
     function getVisibleItems(): { item: ReviewItem; origIndex: number }[] {
         return state!.items
@@ -205,6 +205,27 @@ export async function launchTUI(): Promise<void> {
     handleMouseControls(tui)
     tui.dispatch()
     tui.run()
+
+    // ── Resize handling ─────────────────────────────────────────────
+
+    function recalcLayout(): void {
+        const size = Deno.consoleSize()
+        termW = size.columns
+        termH = size.rows
+        contentW = Math.min(termW - PAD_LEFT * 2, 118)
+        BODY_LINES = termH - 3 - PAD_TOP
+        MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
+        splitRow = Math.floor(termH * 0.55) + PAD_TOP
+        editorHeight = termH - splitRow - 3
+        COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
+        log("resize:", { termW, termH, contentW })
+    }
+
+    Deno.addSignalListener("SIGWINCH", () => {
+        recalcLayout()
+        if (mode.peek() === "list") { renderListView() }
+        else { renderDetailView() }
+    })
 
     // ── Base components ──────────────────────────────────────────────
 
@@ -232,9 +253,9 @@ export async function launchTUI(): Promise<void> {
         overwriteRectangle: true, text: helpText, zIndex: 10,
     })
 
-    const splitRow = Math.floor(termH * 0.55) + PAD_TOP
-    const editorHeight = termH - splitRow - 3
-    const COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
+    let splitRow = Math.floor(termH * 0.55) + PAD_TOP
+    let editorHeight = termH - splitRow - 3
+    let COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
 
     const editor = new TextBox({
         parent: tui,
@@ -368,12 +389,12 @@ export async function launchTUI(): Promise<void> {
 
             const l1L = `   ${statusLabel(item.status)}  ${authorTag(authName)} ${authName}`
             const l1R = `${file}  ${catLabel(item.category)}`
-            const g1 = Math.max(1, contentW - l1L.length - l1R.length)
+            const g1 = Math.max(1, contentW - tuiTextWidth(l1L) - tuiTextWidth(l1R))
             lines.push(ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled + baseFg(" ".repeat(g1)) + fileStyled + baseFg("  ") + catStyled)
 
             const l2L = `       ${snippet}`
             const l2R = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
-            const g2 = Math.max(1, contentW - l2L.length - l2R.length)
+            const g2 = Math.max(1, contentW - tuiTextWidth(l2L) - tuiTextWidth(l2R))
             const flagStyled = flagParts.length ? (isSelected ? C.selCyan : C.cyan)(` ${flagParts.join(" ")} `) : ""
             lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
@@ -481,7 +502,7 @@ export async function launchTUI(): Promise<void> {
         const frameW = contentW - 2
         function padToWidth(s: string, targetW: number): string {
             const visW = tuiTextWidth(s)
-            return visW >= targetW ? s : s + " ".repeat(targetW - visW)
+            return visW >= targetW ? s : s + " ".repeat(Math.max(0, targetW - visW))
         }
         const stBadge = statusColor(item.status, false)(statusLabel(item.status))
         const catBadge = catColor(item.category, false)(catLabel(item.category))
@@ -548,7 +569,8 @@ export async function launchTUI(): Promise<void> {
         const { item } = visibleItems[sel]
         const target = editTarget.peek()
         const newText = target === "draft" ? (item.draft_response ?? "") : (item.notes ?? "")
-        editor.text.value = "\x00"
+        // Always set text and reset cursor; if the value is unchanged the Signal
+        // won't fire subscribers, but we still need the cursor at the top.
         editor.text.value = newText
         editor.cursorPosition.value = { x: 0, y: 0 }
     }
@@ -626,18 +648,28 @@ export async function launchTUI(): Promise<void> {
         if (k === "escape") { saveEditorText(); mode.value = "list"; renderListView() }
         else if (k === "up") {
             const off = commentScrollOffset.peek()
-            const prev = detailCommentOffsets.filter(r => r < off)
-            if (prev.length > 0) {
-                commentScrollOffset.value = prev[prev.length - 1]
+            if (detailCommentOffsets.length <= 1) {
+                // Single or no comment — line-by-line scroll
+                commentScrollOffset.value = Math.max(0, off - 1)
             } else {
-                commentScrollOffset.value = 0
+                const prev = detailCommentOffsets.filter(r => r < off)
+                if (prev.length > 0) {
+                    commentScrollOffset.value = prev[prev.length - 1]
+                } else {
+                    commentScrollOffset.value = 0
+                }
             }
             renderDetailView()
         } else if (k === "down") {
             const off = commentScrollOffset.peek()
-            const next = detailCommentOffsets.find(r => r > off)
-            if (next !== undefined) {
-                commentScrollOffset.value = Math.max(0, next - 1)
+            if (detailCommentOffsets.length <= 1) {
+                // Single or no comment — line-by-line scroll
+                commentScrollOffset.value = off + 1
+            } else {
+                const next = detailCommentOffsets.find(r => r > off)
+                if (next !== undefined) {
+                    commentScrollOffset.value = Math.max(0, next - 1)
+                }
             }
             renderDetailView()
         } else if (k === "left" || k === "right") {

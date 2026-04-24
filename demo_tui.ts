@@ -145,10 +145,10 @@ type ViewMode = "list" | "detail_browse" | "detail_edit"
 type EditTarget = "notes" | "draft"
 
 const state = fakeState
-const { columns: termW, rows: termH } = Deno.consoleSize()
+let { columns: termW, rows: termH } = Deno.consoleSize()
 const PAD_LEFT = 2
 const PAD_TOP = 1  // blank row after header
-const contentW = Math.min(termW - PAD_LEFT * 2, 118)
+let contentW = Math.min(termW - PAD_LEFT * 2, 118)
 log("size:", { termW, termH, contentW })
 
 const mode = new Signal<ViewMode>("list")
@@ -167,9 +167,9 @@ function getVisibleItems(): { item: ReviewItem; origIndex: number }[] {
 
 let visibleItems = getVisibleItems()
 
-const BODY_LINES = termH - 3 - PAD_TOP
+let BODY_LINES = termH - 3 - PAD_TOP
 const LINES_PER_ITEM = 3
-const MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
+let MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
 
 function padLines(lines: string[], count: number): string {
     const result = [...lines]
@@ -188,6 +188,27 @@ handleInput(tui)
 handleMouseControls(tui)
 tui.dispatch()
 tui.run()
+
+// ── Resize handling ─────────────────────────────────────────────────────
+
+function recalcLayout(): void {
+    const size = Deno.consoleSize()
+    termW = size.columns
+    termH = size.rows
+    contentW = Math.min(termW - PAD_LEFT * 2, 118)
+    BODY_LINES = termH - 3 - PAD_TOP
+    MAX_VISIBLE_ITEMS = Math.floor(BODY_LINES / LINES_PER_ITEM)
+    splitRow = Math.floor(termH * 0.55) + PAD_TOP
+    editorHeight = termH - splitRow - 3
+    COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
+    log("resize:", { termW, termH, contentW })
+}
+
+Deno.addSignalListener("SIGWINCH", () => {
+    recalcLayout()
+    if (mode.peek() === "list") { renderListView() }
+    else { renderDetailView() }
+})
 
 // ── Base components ─────────────────────────────────────────────────────
 
@@ -223,9 +244,9 @@ new Label({
     zIndex: 10,
 })
 
-const splitRow = Math.floor(termH * 0.55) + PAD_TOP
-const editorHeight = termH - splitRow - 3  // -3: help bar (2) + frame bottom border (1)
-const COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
+let splitRow = Math.floor(termH * 0.55) + PAD_TOP
+let editorHeight = termH - splitRow - 3  // -3: help bar (2) + frame bottom border (1)
+let COMMENT_AREA_HEIGHT = splitRow - 2 - PAD_TOP - 2
 
 // ── Word-jump helpers ───────────────────────────────────────────────────
 
@@ -564,10 +585,10 @@ function renderListView(): void {
         const fileStyled = file ? (isSelected ? C.selDim : C.dim)(file) : ""
         const catStyled = catColor(item.category, isSelected)(catLabel(item.category))
 
-        // Calculate gap (use plain-text lengths for spacing)
+        // Calculate gap (use visual width for spacing)
         const l1Left = `   ${statusLabel(item.status)}  ${authorTag(authName)} ${authName}`
         const l1Right = `${file}  ${catLabel(item.category)}`
-        const gap1 = Math.max(1, contentW - l1Left.length - l1Right.length)
+        const gap1 = Math.max(1, contentW - tuiTextWidth(l1Left) - tuiTextWidth(l1Right))
 
         const line1 = ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled
             + baseFg(" ".repeat(gap1)) + fileStyled + baseFg("  ") + catStyled
@@ -581,7 +602,7 @@ function renderListView(): void {
 
         const l2Left = `       ${snippet}`
         const l2Right = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
-        const gap2 = Math.max(1, contentW - l2Left.length - l2Right.length)
+        const gap2 = Math.max(1, contentW - tuiTextWidth(l2Left) - tuiTextWidth(l2Right))
 
         const line2 = indent + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
 
@@ -712,7 +733,7 @@ function renderDetailView(): void {
     // Pad a line with possible inline ANSI to exactly targetW visible chars
     function padToWidth(s: string, targetW: number): string {
         const visW = tuiTextWidth(s)
-        return visW >= targetW ? s : s + " ".repeat(targetW - visW)
+        return visW >= targetW ? s : s + " ".repeat(Math.max(0, targetW - visW))
     }
 
     // Status bar inside the frame
@@ -807,8 +828,8 @@ function loadEditorText(): void {
     const { item } = visibleItems[sel]
     const target = editTarget.peek()
     const newText = target === "draft" ? (item.draft_response ?? "") : (item.notes ?? "")
-    // Force Signal to fire even if text is the same (e.g., both empty)
-    editor.text.value = "\x00"
+    // Always set text and reset cursor; if the value is unchanged the Signal
+    // won't fire subscribers, but we still need the cursor at the top.
     editor.text.value = newText
     editor.cursorPosition.value = { x: 0, y: 0 }
 }
@@ -899,28 +920,28 @@ function handleDetailBrowseKey(e: any): void {
         renderListView()
     } else if (k === "up") {
         const off = commentScrollOffset.peek()
-        // Find the previous comment that starts before the current scroll position
-        const prev = detailCommentOffsets.filter(r => r < off)
-        if (prev.length > 0) {
-            const target = prev[prev.length - 1]
-            // Scroll just enough to show the target at the top
-            commentScrollOffset.value = target
+        if (detailCommentOffsets.length <= 1) {
+            // Single or no comment — line-by-line scroll
+            commentScrollOffset.value = Math.max(0, off - 1)
         } else {
-            commentScrollOffset.value = 0
+            // Find the previous comment that starts before the current scroll position
+            const prev = detailCommentOffsets.filter(r => r < off)
+            if (prev.length > 0) {
+                commentScrollOffset.value = prev[prev.length - 1]
+            } else {
+                commentScrollOffset.value = 0
+            }
         }
         renderDetailView()
     } else if (k === "down") {
         const off = commentScrollOffset.peek()
-        const visibleEnd = off + COMMENT_AREA_HEIGHT
-        // Find the next comment that starts after the current scroll position
-        const next = detailCommentOffsets.find(r => r > off)
-        if (next !== undefined) {
-            // If the next comment header is already visible, just scroll a few lines
-            // to bring it near the top (with 1 line of context from previous)
-            if (next < visibleEnd) {
-                commentScrollOffset.value = Math.max(0, next - 1)
-            } else {
-                // Not visible — scroll to show it at the top
+        if (detailCommentOffsets.length <= 1) {
+            // Single or no comment — line-by-line scroll
+            commentScrollOffset.value = off + 1
+        } else {
+            // Find the next comment that starts after the current scroll position
+            const next = detailCommentOffsets.find(r => r > off)
+            if (next !== undefined) {
                 commentScrollOffset.value = Math.max(0, next - 1)
             }
         }

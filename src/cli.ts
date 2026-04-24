@@ -1,5 +1,6 @@
 import { Command } from "jsr:@cliffy/command@1.0.0-rc.7"
 import $ from "jsr:@david/dax@0.42"
+import { readAll } from "jsr:@std/io@0.224/read-all"
 import type { ReviewState, ItemCategory, ItemStatus } from "./types.ts"
 import { itemId, computeDisplayStatus } from "./types.ts"
 import { statePath } from "./paths.ts"
@@ -146,10 +147,9 @@ async function draftAction(id: string, text: string | undefined, useStdin: boole
     const item = state.items[index]
 
     if (useStdin) {
-        const buf = new Uint8Array(1024 * 1024)
-        const n = await Deno.stdin.read(buf)
-        if (n) {
-            item.draft_response = new TextDecoder().decode(buf.subarray(0, n)).trimEnd()
+        const buf = await readAll(Deno.stdin)
+        if (buf.length > 0) {
+            item.draft_response = new TextDecoder().decode(buf).trimEnd()
             await saveCurrentState(state)
             console.log(`Draft saved for ${id} (${item.draft_response.length} chars)`)
         }
@@ -172,10 +172,9 @@ async function noteAction(id: string, text: string | undefined, useStdin: boolea
     const item = state.items[index]
 
     if (useStdin) {
-        const buf = new Uint8Array(1024 * 1024)
-        const n = await Deno.stdin.read(buf)
-        if (n) {
-            item.notes = new TextDecoder().decode(buf.subarray(0, n)).trimEnd()
+        const buf = await readAll(Deno.stdin)
+        if (buf.length > 0) {
+            item.notes = new TextDecoder().decode(buf).trimEnd()
             await saveCurrentState(state)
             console.log(`Notes saved for ${id}`)
         }

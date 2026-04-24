@@ -84,6 +84,9 @@ function mergeCommentItems(
 
 // ── Merge CI items: accumulate history ───────────────────────────────────
 
+// Maximum number of CI failure records to retain
+const MAX_CI_FAILURES = 20
+
 function mergeCIItems(
     existing: ReviewItem[],
     fresh: CIFailureItem[],
@@ -105,6 +108,14 @@ function mergeCIItems(
         if (!existingKeys.has(key)) {
             result.push(item)
         }
+    }
+
+    // Prune: if we have fresh failures, only keep failures from the latest
+    // commit SHA plus a small history. This prevents unbounded accumulation.
+    if (result.length > MAX_CI_FAILURES) {
+        // Sort by recorded_at descending (newest first), then keep the cap
+        result.sort((a, b) => (b.recorded_at ?? "").localeCompare(a.recorded_at ?? ""))
+        result.length = MAX_CI_FAILURES
     }
 
     return result

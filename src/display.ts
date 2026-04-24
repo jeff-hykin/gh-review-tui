@@ -1,5 +1,6 @@
 import type { ReviewItem, CommentItem, CIFailureItem, MergeConflictItem, DisplayStatus, ItemCategory, ItemStatus } from "./types.ts"
 import { computeDisplayStatus, itemId } from "./types.ts"
+import { textWidth as tuiTextWidth } from "deno_tui/utils/strings.ts"
 
 // ── ANSI colors ──────────────────────────────────────────────────────────
 
@@ -91,10 +92,15 @@ export function formatCategory(cat: ItemCategory): string {
 // ── Truncate ─────────────────────────────────────────────────────────────
 
 export function truncate(s: string, max: number): string {
-    if (s.length <= max) {
+    if (tuiTextWidth(s) <= max) {
         return s
     }
-    return s.slice(0, max - 1) + "…"
+    // Trim characters until visual width fits, accounting for wide chars
+    let result = s
+    while (tuiTextWidth(result) > max - 1 && result.length > 0) {
+        result = result.slice(0, result.length - 1)
+    }
+    return result + "…"
 }
 
 // ── Snippet for list view ────────────────────────────────────────────────

@@ -7,7 +7,11 @@ export function wordWrap(text: string, width: number): string[] {
             result.push(line)
             continue
         }
+        // Capture leading indentation to preserve on continuation lines
+        const indentMatch = line.match(/^(\s*)/)
+        const indent = indentMatch ? indentMatch[1] : ""
         let remaining = line
+        let isFirstChunk = true
         while (remaining.length > width) {
             // Find last space within width
             let breakAt = remaining.lastIndexOf(" ", width)
@@ -17,6 +21,11 @@ export function wordWrap(text: string, width: number): string[] {
             }
             result.push(remaining.slice(0, breakAt))
             remaining = remaining.slice(breakAt).replace(/^ /, "")
+            if (isFirstChunk && indent) {
+                // Prepend indentation to continuation lines
+                remaining = indent + remaining
+                isFirstChunk = false
+            }
         }
         if (remaining.length > 0) {
             result.push(remaining)
