@@ -157,6 +157,7 @@ const editTarget = new Signal<EditTarget>("notes")  // default to notes
 const commentScrollOffset = new Signal(0)
 
 let detailCommentOffsets: number[] = []
+let confirmingResolveAll = false
 
 function getVisibleItems(): { item: ReviewItem; origIndex: number }[] {
     return state.items
@@ -582,7 +583,7 @@ function renderListView(): void {
     }
 
     bodyText.value = padLines(lines, BODY_LINES)
-    helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
+    helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown"
 
     editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
@@ -824,6 +825,23 @@ tui.on("keyPress", (event: any) => {
 
 function handleListKey(e: any): void {
     const k = e.key
+
+    // Resolve-all confirmation flow
+    if (confirmingResolveAll) {
+        confirmingResolveAll = false
+        if (k === "y") {
+            for (const { item } of visibleItems) {
+                if (item.type === "comment") { item.resolved = true }
+            }
+            visibleItems = getVisibleItems()
+            if (selectedIndex.peek() >= visibleItems.length) {
+                selectedIndex.value = Math.max(0, visibleItems.length - 1)
+            }
+        }
+        renderListView()
+        return
+    }
+
     if (k === "up") {
         const s = selectedIndex.peek()
         if (s > 0) { selectedIndex.value = s - 1; renderListView() }
@@ -850,6 +868,11 @@ function handleListKey(e: any): void {
     else if (k === "S") { visibleItems[selectedIndex.peek()].item.status = "unaddressed"; renderListView() }
     else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
     else if (k === "o") { openCurrentItem() }
+    else if (k === "A") {
+        confirmingResolveAll = true
+        const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
+        helpText.value = ` Resolve all ${count} threads? Press y to confirm, any other key to cancel\n `
+    }
     else if (k === "1") { visibleItems[selectedIndex.peek()].item.category = "simple_fix"; renderListView() }
     else if (k === "2") { visibleItems[selectedIndex.peek()].item.category = "discussion"; renderListView() }
     else if (k === "3") { visibleItems[selectedIndex.peek()].item.category = "wontfix"; renderListView() }

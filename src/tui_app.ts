@@ -185,6 +185,7 @@ export async function launchTUI(): Promise<void> {
     const selectedIndex = new Signal(0)
     const editTarget = new Signal<EditTarget>("notes")
     const commentScrollOffset = new Signal(0)
+    let confirmingResolveAll = false
 
     const BODY_LINES = termH - 3 - PAD_TOP
     const LINES_PER_ITEM = 3
@@ -380,7 +381,7 @@ export async function launchTUI(): Promise<void> {
         }
 
         bodyText.value = padLines(lines, BODY_LINES)
-        helpText.value = " up/dn navigate  enter detail  r resolve  s solved  S unsolved  c clip  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync  o open"
+        helpText.value = " up/dn navigate  enter detail  r resolve  A resolve-all  s solved  S unsolved  c clip  o open  q quit\n 1 fix  2 discuss  3 wontfix  4 large  0 unknown  R sync"
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -574,6 +575,27 @@ export async function launchTUI(): Promise<void> {
 
     function handleListKey(e: any): void {
         const k = e.key
+
+        if (confirmingResolveAll) {
+            confirmingResolveAll = false
+            if (k === "y") {
+                const resolvePromises: Promise<void>[] = []
+                for (const { item } of visibleItems) {
+                    if (item.type === "comment" && !item.resolved && item.thread_node_id) {
+                        resolvePromises.push(gh.resolveThread(item.thread_node_id).then(ok => { if (ok) item.resolved = true }))
+                    }
+                }
+                Promise.all(resolvePromises).then(async () => {
+                    await saveState(path, state!)
+                    visibleItems = getVisibleItems()
+                    if (selectedIndex.peek() >= visibleItems.length) { selectedIndex.value = Math.max(0, visibleItems.length - 1) }
+                    renderListView()
+                })
+            }
+            renderListView()
+            return
+        }
+
         if (k === "up") { const s = selectedIndex.peek(); if (s > 0) { selectedIndex.value = s - 1; renderListView() } }
         else if (k === "down") { const s = selectedIndex.peek(); if (s < visibleItems.length - 1) { selectedIndex.value = s + 1; renderListView() } }
         else if (k === "return") { mode.value = "detail_browse"; editTarget.value = "notes"; loadEditorText(); commentScrollOffset.value = 0; renderDetailView() }
@@ -584,6 +606,11 @@ export async function launchTUI(): Promise<void> {
         else if (k === "S") { setCurrentItemStatus("unaddressed") }
         else if (k === "c") { clipCurrentItem() }
         else if (k === "o") { openCurrentItem() }
+        else if (k === "A") {
+            confirmingResolveAll = true
+            const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
+            helpText.value = ` Resolve all ${count} threads? Press y to confirm, any other key to cancel\n `
+        }
         else if (k === "1") { setCurrentItemCategory("simple_fix") }
         else if (k === "2") { setCurrentItemCategory("discussion") }
         else if (k === "3") { setCurrentItemCategory("wontfix") }
