@@ -589,7 +589,8 @@ export async function launchTUI(): Promise<void> {
             editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
             editor.state.value = "active"
             const editLabel = target === "notes" ? "NOTES" : "REPLY"
-            helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("cmd+enter", "submit reply")}  ${hk("esc", "back to thread")}\n `
+            const submitHelp = target === "draft" ? `  ${hk("ctrl+s", "send reply")}` : ""
+            helpText.value = ` ${C.dim("Editing " + editLabel + "...")}${submitHelp}  ${hk("esc", "back to thread")}\n `
         } else {
             setFrameColor(editorFrame, DIM)
             const browseLabel = target === "notes" ? "NOTES" : "REPLY"
@@ -757,7 +758,11 @@ export async function launchTUI(): Promise<void> {
     }
 
     function handleDetailEditKey(e: any): void {
-        if (e.key === "return" && (e.meta || e.ctrl)) { if (editTarget.peek() === "draft") { sendCurrentDraft() } return }
+        // ctrl+s is the reliable submit key — most terminals strip the ctrl/meta
+        // modifier from enter before sending (cmd+enter often isn't forwarded at
+        // all, ctrl+enter arrives as plain \r), so we can't depend on them.
+        const isSubmit = (e.ctrl && e.key === "s") || (e.key === "return" && (e.meta || e.ctrl))
+        if (isSubmit) { if (editTarget.peek() === "draft") { sendCurrentDraft() } return }
         if (e.key === "escape") { saveEditorText(); mode.value = "detail_browse"; renderDetailView() }
     }
 
@@ -838,9 +843,19 @@ export async function launchTUI(): Promise<void> {
     async function sendCurrentDraft(): Promise<void> {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
         const { item } = visibleItems[sel]
-        if (item.type !== "comment" || !item.draft_response || !item.thread_node_id) return
+        if (item.type !== "comment") { helpText.value = " ✗ Can only reply to comment threads\n "; return }
+        if (!item.draft_response.trim()) { helpText.value = " ✗ Draft is empty — type a reply first\n "; return }
+        if (!item.thread_node_id) { helpText.value = " ✗ Thread has no node ID (re-sync with R)\n "; return }
+        helpText.value = ` ${C.cyan.bold("…")} Sending reply to GitHub...\n `
         const ok = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, item.draft_response)
-        if (ok) { item.draft_response = ""; editor.text.value = ""; await saveState(path, state!); saveEditorText(); mode.value = "detail_browse"; renderDetailView() }
+        if (ok) {
+            item.draft_response = ""; editor.text.value = ""
+            await saveState(path, state!); saveEditorText()
+            mode.value = "detail_browse"; renderDetailView()
+            helpText.value = ` ${C.green("✓")} Reply sent\n `
+        } else {
+            helpText.value = ` ${C.red("✗")} Send failed — check gh auth status\n `
+        }
     }
 
     async function resyncState(): Promise<void> {

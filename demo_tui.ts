@@ -858,7 +858,8 @@ function renderDetailView(): void {
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "active"
         const editLabel = target === "notes" ? "NOTES" : "REPLY"
-        helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("cmd+enter", "submit reply")}  ${hk("esc", "back to thread")}\n `
+        const submitHelp = target === "draft" ? `  ${hk("ctrl+s", "send reply")}` : ""
+        helpText.value = ` ${C.dim("Editing " + editLabel + "...")}${submitHelp}  ${hk("esc", "back to thread")}\n `
     } else {
         setFrameColor(editorFrame, DIM)
         // Show "press enter" overlay on top of editor with tab label
@@ -1168,16 +1169,20 @@ function handleDetailBrowseKey(e: any): void {
 }
 
 function handleDetailEditKey(e: any): void {
-    // cmd+enter = submit reply (only works on reply tab)
-    if (e.key === "return" && (e.meta || e.ctrl)) {
+    // ctrl+s = submit (reliable). Keep cmd+enter/ctrl+enter as a bonus for
+    // terminals with extended keyboard protocols, though most strip modifiers
+    // from enter and deliver it as plain \r.
+    const isSubmit = (e.ctrl && e.key === "s") || (e.key === "return" && (e.meta || e.ctrl))
+    if (isSubmit) {
         if (editTarget.peek() !== "draft") {
-            // On notes tab — cmd+enter does nothing (notes aren't submittable)
+            helpText.value = ` ${C.red("✗")} Only reply tab can be submitted\n `
             return
         }
-        log("cmd+enter detected — would submit reply")
+        log("submit detected — would send reply (demo)")
         saveEditorText()
         mode.value = "detail_browse"
         renderDetailView()
+        helpText.value = ` ${C.green("✓")} (demo) would have sent reply\n `
         return
     }
     if (e.key === "escape") {
