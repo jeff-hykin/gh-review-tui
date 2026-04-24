@@ -434,6 +434,8 @@ function mkOv(w: number, z = 6): Ov {
     return { text, label, rect }
 }
 
+const baseStyle = crayon.bgHex(BG).hex(FG)
+
 function ovShow(ov: Ov, col: number, row: number, w: number, txt: string, style: any): void {
     ov.label.theme = { base: style, focused: style, active: style, disabled: style }
     ov.rect.value = { column: col, row, width: w, height: 1 }
@@ -445,7 +447,9 @@ function ovShow(ov: Ov, col: number, row: number, w: number, txt: string, style:
     ov.label.state.value = "base"
 }
 
-function ovHide(ov: Ov): void { ov.label.visible.value = false }
+function ovHide(ov: Ov): void {
+    ov.label.visible.value = false
+}
 
 // Selection highlight bar
 const selBar = mkOv(contentW, 5)
@@ -800,44 +804,45 @@ function renderDetailView(): void {
     // Overlay row offset: +1 for the blank line prepended above
     const ovRowBase = BODY_ROW + 1
 
-    // Position author color overlays — use full content width to fully overwrite previous content
+    // Use inline ANSI colors in the body text instead of overlays for the detail view.
+    // The fork now supports inline colors, so we embed crayon-styled text directly.
     hideAllDetailOvs()
     const authOvWidth = contentW - 2
-    let ovIdx = 0
+
+    // Re-style author lines in bodyLines with inline ANSI colors
     for (const { row: srcRow, author, date } of authorRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        if (ovIdx >= DETAIL_MAX_AUTHORS) break
-        const ov = detailAuthorOvs[ovIdx++]
+        const bodyIdx = visRow + 1  // +1 for the blank line prepended
         if (author === "CI") {
-            const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
-            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authOvWidth, ciStr, crayon.bgHex(BG).hex(RED).bold)
+            bodyLines[bodyIdx] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
         } else {
             const h = authorHue(author)
-            const authStr = ` ${authorTag(author)} ${author}  ${date}`
-            ovShow(ov, PAD_LEFT, ovRowBase + visRow, authOvWidth, authStr, crayon.bgHex(BG).hex(h).bold)
+            bodyLines[bodyIdx] = crayon.hex(h).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
         }
     }
 
-    // Position separator overlays (dimmed)
-    let sepIdx = 0
+    // Re-style separator lines with inline dim color
     for (const srcRow of sepRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        if (sepIdx >= DETAIL_MAX_SEPS) break
-        const sepText = ` ${"─".repeat(panelW + 2)}`
-        ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, sepText, crayon.bgHex(BG).hex(0x45475a))
+        const bodyIdx = visRow + 1
+        bodyLines[bodyIdx] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
     }
 
-    // Position FAILED line overlays (red)
-    let errIdx = 0
+    // Re-style FAILED lines with inline red
     for (const srcRow of failedRows) {
         const visRow = srcRow - scrollOff
         if (visRow < 0 || visRow >= commentAreaHeight) continue
-        if (errIdx >= DETAIL_MAX_ERRORS) break
-        const errText = commentLines[srcRow] ?? ""
-        ovShow(detailErrorOvs[errIdx++], PAD_LEFT, ovRowBase + visRow, errText.length + 1, errText, crayon.bgHex(BG).hex(RED))
+        const bodyIdx = visRow + 1
+        bodyLines[bodyIdx] = crayon.hex(RED)(commentLines[srcRow] ?? "")
     }
+
+    // Re-set body text with inline colors
+    bodyText.value = padLines(bodyLines, BODY_LINES)
+
+    // No author/separator/error overlays needed for detail view anymore
+    // Detail view now uses inline ANSI colors — no overlay positioning needed
 
     // ── Frames and editor position ──
 

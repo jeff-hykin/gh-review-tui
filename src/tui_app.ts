@@ -540,42 +540,33 @@ export async function launchTUI(): Promise<void> {
 
         const ovRowBase = BODY_ROW + 1
 
-        // Author overlays — full content width to fully overwrite previous content
+        // Use inline ANSI colors instead of overlays for detail view
         hideAllDetailOvs()
-        const authOvWidth = contentW - 2
-        let ovIdx = 0
+
         for (const { row: srcRow, author, date } of authorRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            if (ovIdx >= DETAIL_MAX_AUTHORS) break
+            const bodyIdx = visRow + 1
             if (author === "CI") {
-                const ciStr = ` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`
-                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, ciStr, crayon.bgHex(BG).hex(RED).bold)
+                bodyLines[bodyIdx] = crayon.hex(RED).bold(` ✗  CI Failure: ${(item.type === "ci_failure" ? item.check_name : "")}`)
             } else {
-                const authStr = ` ${authorTag(author)} ${author}  ${date}`
-                ovShow(detailAuthorOvs[ovIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, authStr, crayon.bgHex(BG).hex(authorHue(author)).bold)
+                bodyLines[bodyIdx] = crayon.hex(authorHue(author)).bold(` ${authorTag(author)} ${author}`) + crayon.hex(DIM)(`  ${date}`)
             }
         }
 
-        // Separator overlays (dimmed)
-        let sepIdx = 0
         for (const srcRow of sepRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            if (sepIdx >= DETAIL_MAX_SEPS) break
-            const sepText = ` ${"─".repeat(panelW + 2)}`
-            ovShow(detailSepOvs[sepIdx++], PAD_LEFT, ovRowBase + visRow, authOvWidth, sepText, crayon.bgHex(BG).hex(0x45475a))
+            bodyLines[visRow + 1] = crayon.hex(0x45475a)(` ${"─".repeat(panelW + 2)}`)
         }
 
-        // FAILED line overlays (red)
-        let errIdx = 0
         for (const srcRow of failedRows) {
             const visRow = srcRow - scrollOff
             if (visRow < 0 || visRow >= commentAreaHeight) continue
-            if (errIdx >= DETAIL_MAX_ERRORS) break
-            const errText = commentLines[srcRow] ?? ""
-            ovShow(detailErrorOvs[errIdx++], PAD_LEFT, ovRowBase + visRow, errText.length + 1, errText, crayon.bgHex(BG).hex(RED))
+            bodyLines[visRow + 1] = crayon.hex(RED)(commentLines[srcRow] ?? "")
         }
+
+        bodyText.value = padLines(bodyLines, BODY_LINES)
 
         // Frames and editor position
         commentFrameRect.value = { column: PAD_LEFT + 1, row: BODY_ROW + 1, width: contentW - 2, height: commentAreaHeight }
