@@ -251,12 +251,12 @@ const editor = new TextBox({
     parent: tui,
     theme: {
         base: crayon.bgHex(BG).hex(FG),
-        focused: crayon.bgHex(BG_SEL).hex(FG),
-        active: crayon.bgHex(0x45475a).hex(FG),
+        focused: crayon.bgHex(BG).hex(FG),
+        active: crayon.bgHex(BG).hex(FG),
         value: {
             base: crayon.bgHex(BG).hex(FG),
-            focused: crayon.bgHex(BG_SEL).hex(FG),
-            active: crayon.bgHex(0x45475a).hex(FG),
+            focused: crayon.bgHex(BG).hex(FG),
+            active: crayon.bgHex(BG).hex(FG),
         },
         cursor: {
             base: crayon.bgWhite.black,
@@ -270,8 +270,8 @@ const editor = new TextBox({
         },
         highlightedLine: {
             base: crayon.bgHex(BG_SEL).hex(FG),
-            focused: crayon.bgHex(0x45475a).hex(FG),
-            active: crayon.bgHex(0x585b70).hex(FG),
+            focused: crayon.bgHex(BG_SEL).hex(FG),
+            active: crayon.bgHex(BG_SEL).hex(FG),
         },
     },
     rectangle: { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight },

@@ -225,11 +225,11 @@ export async function launchTUI(): Promise<void> {
     const editor = new TextBox({
         parent: tui,
         theme: {
-            base: crayon.bgHex(BG).hex(FG), focused: crayon.bgHex(BG_SEL).hex(FG), active: crayon.bgHex(0x45475a).hex(FG),
-            value: { base: crayon.bgHex(BG).hex(FG), focused: crayon.bgHex(BG_SEL).hex(FG), active: crayon.bgHex(0x45475a).hex(FG) },
+            base: crayon.bgHex(BG).hex(FG), focused: crayon.bgHex(BG).hex(FG), active: crayon.bgHex(BG).hex(FG),
+            value: { base: crayon.bgHex(BG).hex(FG), focused: crayon.bgHex(BG).hex(FG), active: crayon.bgHex(BG).hex(FG) },
             cursor: { base: crayon.bgWhite.black, focused: crayon.bgHex(YELLOW).black, active: crayon.bgHex(GREEN).black },
             lineNumbers: { base: crayon.bgHex(BG_SURF).hex(DIM), focused: crayon.bgHex(BG_SURF).hex(DIM), active: crayon.bgHex(BG_SURF).hex(DIM) },
-            highlightedLine: { base: crayon.bgHex(BG_SEL).hex(FG), focused: crayon.bgHex(0x45475a).hex(FG), active: crayon.bgHex(0x585b70).hex(FG) },
+            highlightedLine: { base: crayon.bgHex(BG_SEL).hex(FG), focused: crayon.bgHex(BG_SEL).hex(FG), active: crayon.bgHex(BG_SEL).hex(FG) },
         },
         rectangle: { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight },
         text: "", lineNumbering: false, lineHighlighting: true, multiCodePointSupport: true, zIndex: 8,
