@@ -16,7 +16,7 @@ import { itemId, computeDisplayStatus } from "./src/types.ts"
 import { truncate } from "./src/display.ts"
 import { generateClipboardContent, copyToClipboard } from "./src/clipboard.ts"
 import { wordWrap } from "./src/word_wrap.ts"
-import { insertAt } from "deno_tui/utils/strings.ts"
+import { insertAt, textWidth as tuiTextWidth } from "deno_tui/utils/strings.ts"
 import { clamp } from "deno_tui/utils/numbers.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
@@ -390,7 +390,7 @@ function setFrameColor(frame: Frame, color: number): void {
 // "Press enter to start typing" overlay on top of editor
 const editorOverlayText = new Signal(" ")
 const editorOverlayRect = new Signal<any>({ column: 1, row: 9999, width: contentW, height: editorHeight })
-const editorOverlayStyle = crayon.bgHex(BG_SURF).hex(DIM)
+const editorOverlayStyle = crayon.bgHex(BG).hex(DIM)
 const editorOverlay = new Label({
     parent: tui,
     theme: { base: editorOverlayStyle, focused: editorOverlayStyle, active: editorOverlayStyle, disabled: editorOverlayStyle },
@@ -655,17 +655,24 @@ function renderDetailView(): void {
     }
 
     // Build body with inline frame borders (no Frame component needed)
-    const dim = crayon.hex(BLUE)
+    const frameDim = isEditing ? crayon.hex(DIM) : crayon.hex(BLUE)
     const frameW = contentW - 2
+
+    // Pad a line with possible inline ANSI to exactly targetW visible chars
+    function padToWidth(s: string, targetW: number): string {
+        const visW = tuiTextWidth(s)
+        return visW >= targetW ? s : s + " ".repeat(targetW - visW)
+    }
+
     const bodyLines: string[] = []
-    bodyLines.push(dim(`╭${"─".repeat(frameW)}╮`))
+    bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
     for (const line of scrolled) {
-        bodyLines.push(dim("│") + (line || " ".repeat(frameW)) + dim("│"))
+        bodyLines.push(frameDim("│") + padToWidth(line || "", frameW) + frameDim("│"))
     }
     while (bodyLines.length < commentAreaHeight + 1) {
-        bodyLines.push(dim("│") + " ".repeat(frameW) + dim("│"))
+        bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│"))
     }
-    bodyLines.push(dim(`╰${"─".repeat(frameW)}╯`))
+    bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))
     bodyLines.push("")
     bodyLines.push(` ─── [${tabLabel}] ─── (left/right: ${otherLabel})`)
 

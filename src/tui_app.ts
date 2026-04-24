@@ -7,7 +7,7 @@ import { Signal } from "deno_tui/signals/mod.ts"
 import { TextBox } from "deno_tui/components/textbox.ts"
 import { Label } from "deno_tui/components/label.ts"
 import { Frame } from "deno_tui/components/frame.ts"
-import { insertAt } from "deno_tui/utils/strings.ts"
+import { insertAt, textWidth as tuiTextWidth } from "deno_tui/utils/strings.ts"
 import { clamp } from "deno_tui/utils/numbers.ts"
 
 import type { ReviewState, ReviewItem, ItemCategory, ItemStatus } from "./types.ts"
@@ -279,7 +279,7 @@ export async function launchTUI(): Promise<void> {
     // Editor overlay
     const editorOverlayText = new Signal(" ")
     const editorOverlayRect = new Signal<any>({ column: 1, row: 9999, width: contentW, height: editorHeight })
-    const eovStyle = crayon.bgHex(BG_SURF).hex(DIM)
+    const eovStyle = crayon.bgHex(BG).hex(DIM)
     const editorOverlay = new Label({
         parent: tui,
         theme: { base: eovStyle, focused: eovStyle, active: eovStyle, disabled: eovStyle },
@@ -459,11 +459,15 @@ export async function launchTUI(): Promise<void> {
         }
 
         // Build body with inline frame borders
-        const frameDim = crayon.hex(BLUE)
+        const frameDim = isEditing ? crayon.hex(DIM) : crayon.hex(BLUE)
         const frameW = contentW - 2
+        function padToWidth(s: string, targetW: number): string {
+            const visW = tuiTextWidth(s)
+            return visW >= targetW ? s : s + " ".repeat(targetW - visW)
+        }
         const bodyLines: string[] = []
         bodyLines.push(frameDim(`╭${"─".repeat(frameW)}╮`))
-        for (const line of scrolled) { bodyLines.push(frameDim("│") + (line || " ".repeat(frameW)) + frameDim("│")) }
+        for (const line of scrolled) { bodyLines.push(frameDim("│") + padToWidth(line || "", frameW) + frameDim("│")) }
         while (bodyLines.length < commentAreaHeight + 1) { bodyLines.push(frameDim("│") + " ".repeat(frameW) + frameDim("│")) }
         bodyLines.push(frameDim(`╰${"─".repeat(frameW)}╯`))
         bodyLines.push("")
