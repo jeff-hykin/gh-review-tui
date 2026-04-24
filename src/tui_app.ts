@@ -214,7 +214,7 @@ export async function launchTUI(): Promise<void> {
     const helpText = new Signal(" \n ")
     new Label({
         parent: tui,
-        theme: { base: crayon.bgHex(BG_SEL).hex(0xa6adc8) },
+        theme: { base: crayon.bgHex(BG).hex(DIM) },
         rectangle: { column: PAD_LEFT, row: termH - 2, width: contentW, height: 2 },
         overwriteRectangle: true, text: helpText, zIndex: 10,
     })
