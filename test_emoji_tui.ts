@@ -15,21 +15,32 @@ handleInput(tui)
 tui.dispatch()
 tui.run()
 
+const red = crayon.hex(0xf38ba8)
+const green = crayon.hex(0xa6e3a1)
+const blue = crayon.hex(0x89b4fa)
+const yellow = crayon.hex(0xf9e2af)
+const magenta = crayon.hex(0xcba6f7)
+const cyan = crayon.hex(0x89dceb)
+const dim = crayon.hex(0x6c7086)
+const bold = crayon.bold
+
 const text = new Signal([
-    "Emoji rendering test (press q to quit)",
+    bold("Rendering test") + dim("  (press q to quit)"),
     "",
-    "BMP symbols (U+0000-FFFF):",
-    "  ◆ ◇ ● ○ ■ □ ▲ △ ▼ ▽ ♠ ♣ ♥ ♦ ★ ☆ ◈ ◉ ◊ ▣",
+    "BMP symbols:  ◆ ◇ ● ○ ■ □ ▲ △ ▼ ▽ ♠ ♣ ♥ ♦ ★ ☆",
     "",
-    "Emoji (above U+FFFF / surrogate pairs):",
-    "  🔥 🐍 🧀 🔔 🔑 🌲 👍 🎯 💎 🐸",
+    "Emoji:  🔥 🐍 🧀 🔔 🔑 🌲 👍 🎯 💎 🐸",
     "",
-    "Mixed line:",
-    "  ◊♥ arescrimson    Should we fall back...",
-    "  ♠♣ connor-grepile Cache merged costmap",
+    "Inline colors:",
+    `  ${red("red")} ${green("green")} ${blue("blue")} ${yellow("yellow")} ${magenta("magenta")} ${cyan("cyan")}`,
     "",
-    "If emojis show as ?? or blank, Labels can't handle them.",
-    "If BMP symbols show correctly, we use those instead.",
+    "Mixed emoji + color:",
+    `  🔥 ${red("FAILED")} tests/test_costmap.py  ${dim("2026-04-22")}`,
+    `  ✓  ${green("PASSED")} tests/test_planner.py  ${dim("2026-04-22")}`,
+    "",
+    `Colored authors: ${blue("jeff-hykin")} ${red("arescrimson")} ${green("connor")}`,
+    "",
+    dim("If colors render inline, the overlay system can be simplified."),
 ].join("\n"))
 
 new Label({
