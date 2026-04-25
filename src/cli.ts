@@ -59,6 +59,11 @@ const VALID_STATUSES: ItemStatus[] = ["unseen", "unaddressed", "auto_solved", "s
 
 // ── Individual command actions (extracted for type clarity) ───────────────
 
+async function infoAction(): Promise<void> {
+    const path = await getStatePathForCwd()
+    console.log(path)
+}
+
 async function syncAction(): Promise<void> {
     const path = await getStatePathForCwd()
     const existing = await loadState(path)
@@ -294,6 +299,9 @@ export function buildCLI(): Command {
         .name("gre")
         .version("0.1.0")
         .description("GitHub Review Explorer — burn through PR review comments from the terminal.")
+
+    cmd.command("info", "Print the path to the YAML state file for the current PR")
+        .action(infoAction)
 
     cmd.command("sync", "Fetch PR data from GitHub and update local state")
         .action(syncAction)
