@@ -1,6 +1,4 @@
 {
-    "name": "gre",
-    "version": "0.1.0",
     "tasks": {
         "test": "deno test --allow-all tests/",
         "run": "deno run --allow-all gre.ts"
