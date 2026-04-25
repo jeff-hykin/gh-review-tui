@@ -269,7 +269,7 @@ const BODY_ROW = 1 + PAD_TOP  // first row of body content
 const headerText = new Signal("loading...")
 new Label({
     parent: tui,
-    theme: { base: crayon.bgHex(BG_SURF).hex(BLUE).bold },
+    theme: { base: crayon.bgHex(BG).hex(BLUE).bold },
     rectangle: { column: PAD_LEFT, row: 0, width: contentW, height: 1 },
     overwriteRectangle: true,
     text: headerText,
