@@ -450,7 +450,7 @@ export async function launchTUI(): Promise<void> {
 
         bodyText.value = padLines(lines, BODY_LINES)
         helpText.value =
-            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["s", "solved"], ["S", "unsolved"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
             + "\n"
             + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -696,8 +696,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "r") { resolveCurrentItem() }
         else if (k === "u") { unresolveCurrentItem() }
         else if (k === "v") { markCurrentItemViewed() }
-        else if (k === "s") { setCurrentItemStatus("solved") }
-        else if (k === "S") { setCurrentItemStatus("unaddressed") }
+        else if (k === "s") { toggleCurrentItemSolved() }
         else if (k === "c") { clipCurrentItem() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
@@ -752,7 +751,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "c") { clipCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "v") { markCurrentItemViewed(); renderDetailView() }
-        else if (k === "s") { setCurrentItemStatus("solved"); renderDetailView() }
+        else if (k === "s") { toggleCurrentItemSolved(); renderDetailView() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
     }
@@ -802,6 +801,14 @@ export async function launchTUI(): Promise<void> {
         const { item, origIndex } = visibleItems[sel]
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
         item.status = item.status === "unseen" ? "unaddressed" : "unseen"
+        saveState(path, state!).catch(() => {}); renderListView()
+    }
+
+    function toggleCurrentItemSolved(): void {
+        const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+        const { item, origIndex } = visibleItems[sel]
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
+        item.status = (item.status === "solved" || item.status === "auto_solved") ? "unaddressed" : "solved"
         saveState(path, state!).catch(() => {}); renderListView()
     }
 

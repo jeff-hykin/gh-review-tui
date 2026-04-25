@@ -686,7 +686,7 @@ function renderListView(): void {
 
     bodyText.value = padLines(lines, BODY_LINES)
     helpText.value =
-        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["r", "resolve"], ["A", "resolve-all"], ["s", "solved"], ["S", "unsolved"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
         + "\n"
         + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"]])
 
@@ -1068,12 +1068,9 @@ function handleListKey(e: any): void {
         }
     } else if (k === "s") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
-        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "solved" })
-        item.status = "solved"; renderListView()
-    } else if (k === "S") {
-        const { item, origIndex } = visibleItems[selectedIndex.peek()]
-        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "unaddressed" })
-        item.status = "unaddressed"; renderListView()
+        const next = (item.status === "solved" || item.status === "auto_solved") ? "unaddressed" : "solved"
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
+        item.status = next; renderListView()
     } else if (k === "v") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
         const next = item.status === "unseen" ? "unaddressed" : "unseen"
@@ -1156,8 +1153,9 @@ function handleDetailBrowseKey(e: any): void {
         renderDetailView()
     } else if (k === "s") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
-        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "solved" })
-        item.status = "solved"
+        const next = (item.status === "solved" || item.status === "auto_solved") ? "unaddressed" : "solved"
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
+        item.status = next
         renderDetailView()
     } else if (k === "v") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
