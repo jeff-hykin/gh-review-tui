@@ -22,7 +22,8 @@ import { clamp } from "deno_tui/utils/numbers.ts"
 // ── Logging ──────────────────────────────────────────────────────────────
 
 const LOG_FILE = "/tmp/gre-debug.log"
-Deno.writeTextFileSync(LOG_FILE, `=== gre TUI debug log ${new Date().toISOString()} ===\n`)
+// Append rather than truncate — see comment in src/tui_app.ts.
+Deno.writeTextFileSync(LOG_FILE, `\n=== gre TUI debug log ${new Date().toISOString()} (pid ${Deno.pid}) ===\n`, { append: true })
 function log(...args: unknown[]): void {
     const line = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")
     Deno.writeTextFileSync(LOG_FILE, `[${new Date().toISOString().slice(11, 23)}] ${line}\n`, { append: true })

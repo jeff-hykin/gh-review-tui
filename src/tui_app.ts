@@ -25,7 +25,9 @@ import { askAsync, touchTopic, topicForBranch, inboxForBranch, ensureGreInstruct
 // ── Logging ──────────────────────────────────────────────────────────────
 
 const LOG_FILE = "/tmp/gre-debug.log"
-Deno.writeTextFileSync(LOG_FILE, `=== gre TUI log ${new Date().toISOString()} ===\n`)
+// Append rather than truncate — multiple gre launches accumulate in one log
+// so we can debug what happened in a previous run after a restart.
+Deno.writeTextFileSync(LOG_FILE, `\n=== gre TUI log ${new Date().toISOString()} (pid ${Deno.pid}) ===\n`, { append: true })
 function log(...args: unknown[]): void {
     const line = args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")
     Deno.writeTextFileSync(LOG_FILE, `[${new Date().toISOString().slice(11, 23)}] ${line}\n`, { append: true })
