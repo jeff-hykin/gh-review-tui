@@ -8,6 +8,6 @@
         "noImplicitOverride": false
     },
     "imports": {
-        "deno_tui/": "https://raw.githubusercontent.com/jeff-hykin/deno_tui/2b55aeff156199387508599c37c051e8aa431ceb/src/"
+        "deno_tui/": "https://raw.githubusercontent.com/jeff-hykin/deno_tui/15807d0f6d73d8d4f90ec5675b6afc1b0ede8825/src/"
     }
 }
