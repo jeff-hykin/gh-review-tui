@@ -8,11 +8,17 @@ export interface AskOptions {
     targetTopic: string
     fromInbox: string
     question: string
+    timeoutMs?: number
 }
 
 export interface AskResult {
     text: string
     raw: string
+}
+
+export interface AskHandle {
+    promise: Promise<AskResult>
+    cancel: () => void
 }
 
 export async function touchTopic(topic: string): Promise<{ ok: boolean; error?: string }> {
@@ -31,7 +37,7 @@ export async function touchTopic(topic: string): Promise<{ ok: boolean; error?: 
     }
 }
 
-export function askAsync(opts: AskOptions): Promise<AskResult> {
+export function askAsync(opts: AskOptions): AskHandle {
     const cmd = new Deno.Command("cbg", {
         args: [
             "ask", "--sync",
@@ -42,7 +48,20 @@ export function askAsync(opts: AskOptions): Promise<AskResult> {
         stdout: "piped", stderr: "piped",
     })
     const child = cmd.spawn()
-    return child.output().then((out) => {
+    let timedOut = false
+    let cancelled = false
+    let timer: number | undefined
+    const cancel = () => {
+        cancelled = true
+        try { child.kill("SIGTERM") } catch { /* already gone */ }
+    }
+    if (opts.timeoutMs && opts.timeoutMs > 0) {
+        timer = setTimeout(() => { timedOut = true; cancel() }, opts.timeoutMs)
+    }
+    const promise = child.output().then((out) => {
+        if (timer !== undefined) clearTimeout(timer)
+        if (timedOut) { throw new Error(`cbg ask timed out after ${opts.timeoutMs}ms`) }
+        if (cancelled) { throw new Error("cbg ask cancelled") }
         if (out.code !== 0) {
             const err = new TextDecoder().decode(out.stderr).trim() || `cbg ask exited ${out.code}`
             throw new Error(err)
@@ -55,6 +74,7 @@ export function askAsync(opts: AskOptions): Promise<AskResult> {
         } catch { /* not JSON, fall through with raw */ }
         return { text, raw }
     })
+    return { promise, cancel }
 }
 
 // Sanitize a branch name into something safe to use as a topic / inbox

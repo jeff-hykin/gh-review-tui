@@ -283,7 +283,9 @@ export async function launchTUI(): Promise<void> {
     // side, so this guard refuses a second ask until the first one returns.
     // The trade-off (kept by design): the inbox file accumulates a per-branch
     // record of every Claude exchange.
-    const pendingAsks = new Set<number>()
+    // Map index → cancel fn for in-flight asks (so user can abort from UI)
+    const pendingAsks = new Map<number, () => void>()
+    const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 10 min — a stuck agent shouldn't hang forever
 
     // ── Resize handling ─────────────────────────────────────────────
 
@@ -462,7 +464,9 @@ export async function launchTUI(): Promise<void> {
             if (item.draft_response) { flagParts.push("D") }
             if (item.notes) { flagParts.push("N") }
             const isPending = ds === "pending"
-            if (isPending) { flagParts.push("⏳ WAITING") }
+            const isAsking = pendingAsks.has(visibleItems[i].origIndex)
+            if (isAsking) { flagParts.push("⏳ ASKING CLAUDE") }
+            else if (isPending) { flagParts.push("⏳ WAITING") }
 
             const file = shortFile(item)
             const snippet = itemSnippet(item, contentW - 8)
@@ -481,7 +485,11 @@ export async function launchTUI(): Promise<void> {
             const l2L = `       ${snippet}`
             const l2R = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
             const g2 = Math.max(1, contentW - tuiTextWidth(l2L) - tuiTextWidth(l2R))
-            const flagColor = isPending ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange) : (isSelected ? C.selCyan : C.cyan)
+            const flagColor = isAsking
+                ? (isSelected ? crayon.bgHex(BG_SEL).hex(CYAN).bold : crayon.bgHex(BG).hex(CYAN).bold)
+                : isPending
+                    ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange)
+                    : (isSelected ? C.selCyan : C.cyan)
             const flagStyled = flagParts.length ? flagColor(` ${flagParts.join(" ")} `) : ""
             lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
@@ -490,7 +498,7 @@ export async function launchTUI(): Promise<void> {
 
         bodyText.value = padLines(lines, BODY_LINES)
         helpText.value =
-            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["x", "cancel-ask"], ["o", "open"], ["w", "web"], ["q", "quit"]])
             + "\n"
             + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -738,6 +746,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "v") { markCurrentItemViewed() }
         else if (k === "s") { toggleCurrentItemSolved() }
         else if (k === "c") { askClaudeForCurrentItem() }
+        else if (k === "x") { cancelPendingAskForCurrentItem() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
         else if (k === "A") {
@@ -789,6 +798,7 @@ export async function launchTUI(): Promise<void> {
         } else if (k === "return") { mode.value = "detail_edit"; renderDetailView() }
         else if (e.ctrl && k === "z") { if (performUndo()) renderDetailView() }
         else if (k === "c") { askClaudeForCurrentItem() }
+        else if (k === "x") { cancelPendingAskForCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "v") { markCurrentItemViewed(); renderDetailView() }
         else if (k === "s") { toggleCurrentItemSolved(); renderDetailView() }
@@ -867,18 +877,21 @@ export async function launchTUI(): Promise<void> {
             return
         }
         if (pendingAsks.has(origIndex)) {
-            toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)}`, { type: "info" })
+            toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)} — press x to cancel`, { type: "info" })
             return
         }
         if (pendingAsks.size > 0) {
-            toaster.show(`Claude is busy on another item — wait for it to reply (shared inbox: ${claudeInbox})`, { type: "warning", durationMs: 4000 })
+            toaster.show(`Claude is busy on another item — wait or press x to cancel (shared inbox: ${claudeInbox})`, { type: "warning", durationMs: 4000 })
             return
         }
         const id = itemId(item, origIndex)
         const question = generateClipboardContent(item, origIndex, state!)
-        pendingAsks.add(origIndex)
-        toaster.show(`Sent ${id} to Claude`, { type: "info", durationMs: 2500 })
-        askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
+        log("askClaude:", { id, topic: claudeTopic, inbox: claudeInbox, qLen: question.length })
+        const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question, timeoutMs: ASK_TIMEOUT_MS })
+        pendingAsks.set(origIndex, handle.cancel)
+        if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+        toaster.show(`Sent ${id} to Claude (x to cancel)`, { type: "info", durationMs: 2500 })
+        handle.promise
             .then((reply) => {
                 pendingAsks.delete(origIndex)
                 // Mark auto_solved (orange ◎) so it's visually obvious Claude touched it
@@ -891,9 +904,31 @@ export async function launchTUI(): Promise<void> {
             })
             .catch((err) => {
                 pendingAsks.delete(origIndex)
+                if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
                 const msg = err instanceof Error ? err.message : String(err)
-                toaster.show(`Claude ask failed for ${id}: ${msg.slice(0, 120)}`, { type: "error", durationMs: 6000 })
+                const isTimeout = msg.includes("timed out")
+                const isCancel = msg.includes("cancelled")
+                const type = (isTimeout || isCancel) ? "warning" : "error"
+                toaster.show(`Claude ${isCancel ? "ask cancelled" : isTimeout ? "ask timed out" : "ask failed"} for ${id}: ${msg.slice(0, 120)}`, { type, durationMs: 6000 })
             })
+    }
+
+    function cancelPendingAskForCurrentItem(): void {
+        const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+        const { item, origIndex } = visibleItems[sel]
+        const cancel = pendingAsks.get(origIndex)
+        if (!cancel) {
+            // If nothing pending on this item, fall back to cancelling whatever IS pending
+            if (pendingAsks.size === 0) {
+                toaster.show("No Claude ask in flight", { type: "info" })
+                return
+            }
+            for (const [, c] of pendingAsks) { c() }
+            toaster.show(`Cancelled ${pendingAsks.size} pending Claude ask(s)`, { type: "warning" })
+            return
+        }
+        cancel()
+        toaster.show(`Cancelling Claude ask for ${itemId(item, origIndex)}...`, { type: "warning" })
     }
 
     async function openCurrentItem(): Promise<void> {
