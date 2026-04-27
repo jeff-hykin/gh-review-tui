@@ -54,7 +54,7 @@ function resolveItemIndex(state: ReviewState, idStr: string): number {
     return index
 }
 
-const VALID_CATEGORIES: ItemCategory[] = ["simple_fix", "discussion", "wontfix", "large_change", "unknown"]
+const VALID_CATEGORIES: ItemCategory[] = ["simple_fix", "discussion", "wontfix", "large_change", "nit", "later", "unknown"]
 const VALID_STATUSES: ItemStatus[] = ["unseen", "unaddressed", "auto_solved", "solved"]
 
 // ── Individual command actions (extracted for type clarity) ───────────────

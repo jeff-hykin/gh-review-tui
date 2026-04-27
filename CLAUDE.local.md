@@ -21,7 +21,13 @@ Once you've made the code change, run `gre set <id> status auto_solved`. The sta
 
 ### Category — only promote from `unknown`
 First run `gre show <id>` and look at the `category` field.
-- If it's `unknown`: pick one of `fix | discussion | wontfix | large_change` and set it (`gre set <id> category <…>`).
+- If it's `unknown`: pick one of these and set it (`gre set <id> category <…>`):
+  - `simple_fix` — small, contained code change
+  - `discussion` — needs a back-and-forth, no clear answer yet
+  - `wontfix` — explicitly not changing
+  - `large_change` — substantial refactor / multi-file
+  - `nit` — stylistic nitpick, low urgency
+  - `later` — defer; not for this PR
 - If it's anything else: **leave it alone.** The user already categorized it.
 
 ### Notes — don't clobber

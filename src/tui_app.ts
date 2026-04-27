@@ -107,6 +107,8 @@ function catLabel(c: ItemCategory): string {
         case "discussion":   return " dsc "
         case "wontfix":      return " ✗wnt"
         case "large_change": return " lrg "
+        case "nit":          return " nit "
+        case "later":        return " ltr "
         case "unknown":      return " ??? "
     }
 }
@@ -144,6 +146,8 @@ function catColor(c: ItemCategory, sel: boolean): any {
     if (c === "simple_fix") return sel ? C.selFg : C.green
     if (c === "discussion") return sel ? crayon.bgHex(BG_SEL).hex(MAGENTA) : C.magenta
     if (c === "large_change") return sel ? crayon.bgHex(BG_SEL).hex(RED) : C.red
+    if (c === "later") return sel ? crayon.bgHex(BG_SEL).hex(YELLOW) : crayon.bgHex(BG).hex(YELLOW)
+    // "nit" and "unknown" both fall through to the dim default
     return sel ? C.selDim : C.dim
 }
 
@@ -528,7 +532,7 @@ export async function launchTUI(): Promise<void> {
         helpText.value =
             helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["x", "cancel-ask"], ["o", "open"], ["w", "web"], ["q", "quit"]])
             + "\n"
-            + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"], ["R", "sync"]])
+            + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["5", "nit"], ["6", "later"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "base"
     }
@@ -786,6 +790,8 @@ export async function launchTUI(): Promise<void> {
         else if (k === "2") { setCurrentItemCategory("discussion") }
         else if (k === "3") { setCurrentItemCategory("wontfix") }
         else if (k === "4") { setCurrentItemCategory("large_change") }
+        else if (k === "5") { setCurrentItemCategory("nit") }
+        else if (k === "6") { setCurrentItemCategory("later") }
         else if (k === "0") { setCurrentItemCategory("unknown") }
         else if (k === "R") { resyncState() }
     }

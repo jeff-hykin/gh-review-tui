@@ -86,6 +86,10 @@ export function formatCategory(cat: ItemCategory): string {
             return `${DIM}wontfix${RESET}`
         case "large_change":
             return `${RED}large change${RESET}`
+        case "nit":
+            return `${DIM}nit${RESET}`
+        case "later":
+            return `${YELLOW}later${RESET}`
         case "unknown":
             return `${DIM}???${RESET}`
     }

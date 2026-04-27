@@ -621,6 +621,8 @@ function catLabel(c: ItemCategory): string {
         case "discussion":   return " dsc "
         case "wontfix":      return " ✗wnt"
         case "large_change": return " lrg "
+        case "nit":          return " nit "
+        case "later":        return " ltr "
         case "unknown":      return " ??? "
     }
 }
@@ -636,6 +638,7 @@ function catColor(c: ItemCategory, sel: boolean): any {
     if (c === "simple_fix")   return sel ? C.selFg : C.green  // green for fix
     if (c === "discussion")   return sel ? crayon.bgHex(BG_SEL).hex(MAGENTA) : C.magenta
     if (c === "large_change") return sel ? crayon.bgHex(BG_SEL).hex(RED) : C.red
+    if (c === "later")        return sel ? crayon.bgHex(BG_SEL).hex(YELLOW) : crayon.bgHex(BG).hex(YELLOW)
     return sel ? C.selDim : C.dim
 }
 
@@ -755,7 +758,7 @@ function renderListView(): void {
     helpText.value =
         helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "claude"], ["o", "open"], ["w", "web"], ["q", "quit"]])
         + "\n"
-        + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"]])
+        + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["5", "nit"], ["6", "later"], ["0", "unknown"]])
 
     editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
     editor.state.value = "base"
@@ -1165,9 +1168,9 @@ function handleListKey(e: any): void {
         const count = visibleItems.filter(v => v.item.type === "comment" && !v.item.resolved).length
         helpText.value = ` Resolve all ${count} threads? Press y to confirm, any other key to cancel\n `
     }
-    else if (k === "1" || k === "2" || k === "3" || k === "4" || k === "0") {
+    else if (k === "1" || k === "2" || k === "3" || k === "4" || k === "5" || k === "6" || k === "0") {
         const { item, origIndex } = visibleItems[selectedIndex.peek()]
-        const catMap: Record<string, string> = { "1": "simple_fix", "2": "discussion", "3": "wontfix", "4": "large_change", "0": "unknown" }
+        const catMap: Record<string, string> = { "1": "simple_fix", "2": "discussion", "3": "wontfix", "4": "large_change", "5": "nit", "6": "later", "0": "unknown" }
         pushUndo({ type: "category", itemIndex: origIndex, oldValue: item.category, newValue: catMap[k] })
         item.category = catMap[k] as any; renderListView()
     }
