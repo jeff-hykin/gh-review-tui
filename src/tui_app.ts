@@ -299,10 +299,17 @@ export async function launchTUI(): Promise<void> {
     // side, so this guard refuses a second ask until the first one returns.
     // The trade-off (kept by design): the inbox file accumulates a per-branch
     // record of every Claude exchange.
-    // Map index → cancel fn for in-flight asks (so user can abort from UI).
-    // Intentionally no auto-timeout: real Claude fixes can take a long time
-    // (multi-minute compile/test loops). The `x` key is the recovery hatch.
+    // In-flight ask: at most one at a time per branch (the inbox is shared,
+    // concurrent asks would evict each other on cbg's side). pendingAsks
+    // maps the in-flight origIndex → its cancel fn. Intentionally no
+    // auto-timeout — real Claude fixes can take a long time (multi-minute
+    // compile/test loops). The `x` key is the recovery hatch.
     const pendingAsks = new Map<number, () => void>()
+    // Asks the user has fired while one is in flight queue up here, in
+    // arrival order. The queue is drained one-at-a-time as the in-flight
+    // ask completes. Each entry remembers the status to revert to if the
+    // ask is cancelled or fails before reaching auto_solved.
+    const askQueue: Array<{ origIndex: number; statusBeforeAsk: ItemStatus }> = []
 
     // ── Resize handling ─────────────────────────────────────────────
 
@@ -902,26 +909,39 @@ export async function launchTUI(): Promise<void> {
             return
         }
         if (pendingAsks.has(origIndex)) {
-            toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)} — press x to cancel`, { type: "info" })
+            toaster.show(`Already in flight for ${itemId(item, origIndex)} — press x to cancel`, { type: "info" })
             return
         }
-        if (pendingAsks.size > 0) {
-            toaster.show(`Claude is busy on another item — wait or press x to cancel (shared inbox: ${claudeInbox})`, { type: "warning", durationMs: 4000 })
+        if (askQueue.some(q => q.origIndex === origIndex)) {
+            toaster.show(`Already queued for ${itemId(item, origIndex)} — press x to remove from queue`, { type: "info" })
             return
         }
         const id = itemId(item, origIndex)
-        const question = generateClipboardContent(item, origIndex, state!)
-        log("askClaude:", { id, topic: claudeTopic, inbox: claudeInbox, qLen: question.length })
         const statusBeforeAsk = item.status
-        const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
-        pendingAsks.set(origIndex, handle.cancel)
-        // Persisted "asked claude" status (orange …) — survives restarts so the
-        // user sees the asked state even if they quit gre while in flight.
+        // Persisted "asked claude" status (orange …) regardless of whether
+        // we fire immediately or queue — survives restarts.
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: statusBeforeAsk })
         item.status = "asked_claude"
         saveState(path, state!).catch(() => {})
+        if (pendingAsks.size === 0) {
+            // Fire now
+            fireAskForItem(origIndex, statusBeforeAsk)
+            toaster.show(`Sent ${id} to Claude (x to cancel)`, { type: "info", durationMs: 2500 })
+        } else {
+            askQueue.push({ origIndex, statusBeforeAsk })
+            toaster.show(`Queued ${id} (${askQueue.length} ahead) — will fire when current finishes`, { type: "info", durationMs: 3000 })
+        }
         if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
-        toaster.show(`Sent ${id} to Claude (x to cancel)`, { type: "info", durationMs: 2500 })
+    }
+
+    function fireAskForItem(origIndex: number, statusBeforeAsk: ItemStatus): void {
+        const item = state!.items[origIndex]
+        if (!item) return
+        const id = itemId(item, origIndex)
+        const question = generateClipboardContent(item, origIndex, state!)
+        log("askClaude:", { id, topic: claudeTopic, inbox: claudeInbox, qLen: question.length })
+        const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
+        pendingAsks.set(origIndex, handle.cancel)
         handle.promise
             .then((reply) => {
                 pendingAsks.delete(origIndex)
@@ -932,12 +952,11 @@ export async function launchTUI(): Promise<void> {
                 if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
                 const preview = reply.text.split("\n")[0].slice(0, 80)
                 toaster.show(`${id} solved by Claude — ${preview || "(see notes)"}`, { type: "success", durationMs: 6000 })
+                pumpAskQueue()
             })
             .catch((err) => {
                 pendingAsks.delete(origIndex)
                 // Roll back the asked_claude status if the user hasn't touched it.
-                // Drop the corresponding undo entry so ctrl+z doesn't time-travel
-                // back to a status the item never visibly held.
                 if (item.status === "asked_claude") {
                     item.status = statusBeforeAsk
                     saveState(path, state!).catch(() => {})
@@ -946,29 +965,68 @@ export async function launchTUI(): Promise<void> {
                 }
                 if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
                 const msg = err instanceof Error ? err.message : String(err)
-                const isTimeout = msg.includes("timed out")
                 const isCancel = msg.includes("cancelled")
+                const isTimeout = msg.includes("timed out")
                 const type = (isTimeout || isCancel) ? "warning" : "error"
                 toaster.show(`Claude ${isCancel ? "ask cancelled" : isTimeout ? "ask timed out" : "ask failed"} for ${id}: ${msg.slice(0, 120)}`, { type, durationMs: 6000 })
+                pumpAskQueue()
             })
+    }
+
+    function pumpAskQueue(): void {
+        if (pendingAsks.size > 0) return  // still in flight
+        const next = askQueue.shift()
+        if (!next) return
+        const item = state!.items[next.origIndex]
+        if (!item) { pumpAskQueue(); return }  // skip if item disappeared
+        // If user cancelled or restored status while queued, skip too
+        if (item.status !== "asked_claude") { pumpAskQueue(); return }
+        fireAskForItem(next.origIndex, next.statusBeforeAsk)
+        const id = itemId(item, next.origIndex)
+        toaster.show(`Sent queued ${id} to Claude (${askQueue.length} more queued)`, { type: "info", durationMs: 3000 })
     }
 
     function cancelPendingAskForCurrentItem(): void {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
         const { item, origIndex } = visibleItems[sel]
+        const id = itemId(item, origIndex)
+        // 1. Currently in flight on this item → kill the subprocess
         const cancel = pendingAsks.get(origIndex)
-        if (!cancel) {
-            // If nothing pending on this item, fall back to cancelling whatever IS pending
-            if (pendingAsks.size === 0) {
-                toaster.show("No Claude ask in flight", { type: "info" })
-                return
-            }
-            for (const [, c] of pendingAsks) { c() }
-            toaster.show(`Cancelled ${pendingAsks.size} pending Claude ask(s)`, { type: "warning" })
+        if (cancel) {
+            cancel()
+            toaster.show(`Cancelling in-flight Claude ask for ${id}…`, { type: "warning" })
             return
         }
-        cancel()
-        toaster.show(`Cancelling Claude ask for ${itemId(item, origIndex)}...`, { type: "warning" })
+        // 2. Queued for this item → remove from queue + revert status
+        const qIdx = askQueue.findIndex(q => q.origIndex === origIndex)
+        if (qIdx !== -1) {
+            const removed = askQueue.splice(qIdx, 1)[0]
+            if (item.status === "asked_claude") {
+                item.status = removed.statusBeforeAsk
+                saveState(path, state!).catch(() => {})
+                const undoIdx = undoStack.findIndex(e => e.type === "status" && e.itemIndex === origIndex && e.oldValue === removed.statusBeforeAsk)
+                if (undoIdx !== -1) undoStack.splice(undoIdx, 1)
+            }
+            if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+            toaster.show(`Removed ${id} from Claude queue`, { type: "warning" })
+            return
+        }
+        // 3. Nothing on this item → fall back to cancelling all
+        if (pendingAsks.size === 0 && askQueue.length === 0) {
+            toaster.show("No Claude ask in flight or queued", { type: "info" })
+            return
+        }
+        for (const [, c] of pendingAsks) { c() }
+        const droppedQueue = askQueue.length
+        // Revert queued items' statuses
+        for (const q of askQueue) {
+            const it = state!.items[q.origIndex]
+            if (it && it.status === "asked_claude") { it.status = q.statusBeforeAsk }
+        }
+        askQueue.length = 0
+        if (droppedQueue > 0) { saveState(path, state!).catch(() => {}) }
+        if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+        toaster.show(`Cancelled all Claude asks (${pendingAsks.size + droppedQueue} total)`, { type: "warning" })
     }
 
     async function openCurrentItem(): Promise<void> {

@@ -259,25 +259,44 @@ const toaster = new Toaster(tui, { bg: BG, fg: FG })
 
 // ── Fake Claude ask flow (demo) ─────────────────────────────────────────
 const pendingAsks = new Set<number>()
+const askQueue: number[] = []
 function fakeClaudeAskForCurrentItem(): void {
     const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
     const { item, origIndex } = visibleItems[sel]
-    if (pendingAsks.has(origIndex)) {
-        toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)}`, { type: "info" })
+    if (pendingAsks.has(origIndex) || askQueue.includes(origIndex)) {
+        toaster.show(`Already queued/asked: ${itemId(item, origIndex)}`, { type: "info" })
         return
     }
     const id = itemId(item, origIndex)
-    pendingAsks.add(origIndex)
     pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "asked_claude" })
     item.status = "asked_claude"
     if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
-    toaster.show(`Sent ${id} to Claude (demo)`, { type: "info", durationMs: 2000 })
+    if (pendingAsks.size === 0) {
+        fireFakeAsk(origIndex)
+        toaster.show(`Sent ${id} to Claude (demo)`, { type: "info", durationMs: 2000 })
+    } else {
+        askQueue.push(origIndex)
+        toaster.show(`Queued ${id} (${askQueue.length} ahead) — demo`, { type: "info", durationMs: 3000 })
+    }
+}
+function fireFakeAsk(origIndex: number): void {
+    const item = state.items[origIndex]
+    if (!item) return
+    const id = itemId(item, origIndex)
+    pendingAsks.add(origIndex)
     setTimeout(() => {
         pendingAsks.delete(origIndex)
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "auto_solved" })
         item.status = "auto_solved"
         if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
-        toaster.show(`${id} solved by Claude — (demo) reply text would go here`, { type: "success", durationMs: 5000 })
+        toaster.show(`${id} solved by Claude — (demo) reply`, { type: "success", durationMs: 4000 })
+        const next = askQueue.shift()
+        if (next !== undefined) {
+            fireFakeAsk(next)
+            const nItem = state.items[next]
+            const nId = nItem ? itemId(nItem, next) : `#${next}`
+            toaster.show(`Sent queued ${nId} (demo, ${askQueue.length} more)`, { type: "info", durationMs: 2500 })
+        }
     }, 2500)
 }
 
