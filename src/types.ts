@@ -4,7 +4,7 @@ export type ItemType = "comment" | "ci_failure" | "merge_conflict"
 
 export type ItemCategory = "simple_fix" | "discussion" | "wontfix" | "large_change" | "unknown"
 
-export type ItemStatus = "unseen" | "unaddressed" | "auto_solved" | "solved"
+export type ItemStatus = "unseen" | "unaddressed" | "asked_claude" | "auto_solved" | "solved"
 
 // ── Comment data ─────────────────────────────────────────────────────────
 

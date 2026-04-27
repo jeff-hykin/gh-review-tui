@@ -91,8 +91,9 @@ let detailCommentOffsets: number[] = []
 
 function statusLabel(s: ItemStatus): string {
     switch (s) {
-        case "unseen":      return " ★  "
+        case "unseen":       return " ★  "
         case "unaddressed":  return " ○  "
+        case "asked_claude": return " …  "
         case "auto_solved":  return " ◎  "
         case "solved":       return " ✓  "
     }
@@ -133,7 +134,7 @@ function helpBar(entries: Array<[string, string]>): string {
 function statusColor(s: ItemStatus, sel: boolean): any {
     if (s === "unseen") return C.badgeNew
     if (s === "solved") return C.badgeOk
-    if (s === "auto_solved") return C.badgeAut
+    if (s === "auto_solved" || s === "asked_claude") return C.badgeAut
     return sel ? C.badgeSelDim : C.badgeDim
 }
 
@@ -475,13 +476,13 @@ export async function launchTUI(): Promise<void> {
             else if (item.type === "merge_conflict") { authName = "Merge Conflict" }
             const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
 
+            // Right-side flags: just D / N now (pending and asking moved to
+            // the left side per user request — asked_claude is now a real
+            // status badge, pending shows as a left ⏳ indicator on line 2).
             const flagParts: string[] = []
             if (item.draft_response) { flagParts.push("D") }
             if (item.notes) { flagParts.push("N") }
             const isPending = ds === "pending"
-            const isAsking = pendingAsks.has(visibleItems[i].origIndex)
-            if (isAsking) { flagParts.push("⏳ ASKING CLAUDE") }
-            else if (isPending) { flagParts.push("⏳ WAITING") }
 
             const file = shortFile(item)
             const snippet = itemSnippet(item, contentW - 8)
@@ -497,16 +498,19 @@ export async function launchTUI(): Promise<void> {
             const g1 = Math.max(1, contentW - tuiTextWidth(l1L) - tuiTextWidth(l1R))
             lines.push(ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled + baseFg(" ".repeat(g1)) + fileStyled + baseFg("  ") + catStyled)
 
+            // Left indicator for "pending" (waiting on github reviewer).
+            // Always reserve the same width so non-pending lines align.
+            const pendingLead = isPending
+                ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE).bold : C.orange.bold)("   ⏳ ")
+                : baseFg("      ")
+            const snippetLead = baseFg(" ")
+            // 6 (pendingLead) + 1 (snippetLead) = 7 cells leading, regardless of pending state
             const l2L = `       ${snippet}`
             const l2R = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
             const g2 = Math.max(1, contentW - tuiTextWidth(l2L) - tuiTextWidth(l2R))
-            const flagColor = isAsking
-                ? (isSelected ? crayon.bgHex(BG_SEL).hex(CYAN).bold : crayon.bgHex(BG).hex(CYAN).bold)
-                : isPending
-                    ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange)
-                    : (isSelected ? C.selCyan : C.cyan)
+            const flagColor = isSelected ? C.selCyan : C.cyan
             const flagStyled = flagParts.length ? flagColor(` ${flagParts.join(" ")} `) : ""
-            lines.push(baseFg("       ") + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
+            lines.push(pendingLead + snippetLead + baseFg(snippet) + baseFg(" ".repeat(g2)) + flagStyled)
 
             lines.push(C.sep(`${"─".repeat(contentW)}`))
         }
@@ -902,14 +906,20 @@ export async function launchTUI(): Promise<void> {
         const id = itemId(item, origIndex)
         const question = generateClipboardContent(item, origIndex, state!)
         log("askClaude:", { id, topic: claudeTopic, inbox: claudeInbox, qLen: question.length })
+        const statusBeforeAsk = item.status
         const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
         pendingAsks.set(origIndex, handle.cancel)
+        // Persisted "asked claude" status (orange …) — survives restarts so the
+        // user sees the asked state even if they quit gre while in flight.
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: statusBeforeAsk })
+        item.status = "asked_claude"
+        saveState(path, state!).catch(() => {})
         if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
         toaster.show(`Sent ${id} to Claude (x to cancel)`, { type: "info", durationMs: 2500 })
         handle.promise
             .then((reply) => {
                 pendingAsks.delete(origIndex)
-                // Mark auto_solved (orange ◎) so it's visually obvious Claude touched it
+                // Transition: asked_claude → auto_solved
                 pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
                 item.status = "auto_solved"
                 saveState(path, state!).catch(() => {})
@@ -919,6 +929,15 @@ export async function launchTUI(): Promise<void> {
             })
             .catch((err) => {
                 pendingAsks.delete(origIndex)
+                // Roll back the asked_claude status if the user hasn't touched it.
+                // Drop the corresponding undo entry so ctrl+z doesn't time-travel
+                // back to a status the item never visibly held.
+                if (item.status === "asked_claude") {
+                    item.status = statusBeforeAsk
+                    saveState(path, state!).catch(() => {})
+                    const idx = undoStack.findIndex(e => e.type === "status" && e.itemIndex === origIndex && e.oldValue === statusBeforeAsk)
+                    if (idx !== -1) undoStack.splice(idx, 1)
+                }
                 if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
                 const msg = err instanceof Error ? err.message : String(err)
                 const isTimeout = msg.includes("timed out")

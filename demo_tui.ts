@@ -267,6 +267,9 @@ function fakeClaudeAskForCurrentItem(): void {
     }
     const id = itemId(item, origIndex)
     pendingAsks.add(origIndex)
+    pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "asked_claude" })
+    item.status = "asked_claude"
+    if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
     toaster.show(`Sent ${id} to Claude (demo)`, { type: "info", durationMs: 2000 })
     setTimeout(() => {
         pendingAsks.delete(origIndex)
@@ -584,8 +587,9 @@ function helpBar(entries: Array<[string, string]>): string {
 
 function statusLabel(s: ItemStatus): string {
     switch (s) {
-        case "unseen":      return " ★  "
+        case "unseen":       return " ★  "
         case "unaddressed":  return " ○  "
+        case "asked_claude": return " …  "
         case "auto_solved":  return " ◎  "
         case "solved":       return " ✓  "
     }
@@ -604,7 +608,7 @@ function catLabel(c: ItemCategory): string {
 function statusColor(s: ItemStatus, sel: boolean): any {
     if (s === "unseen")  return C.badgeNew
     if (s === "solved")  return C.badgeOk
-    if (s === "auto_solved") return C.badgeAut
+    if (s === "auto_solved" || s === "asked_claude") return C.badgeAut
     return sel ? C.badgeSelDim : C.badgeDim
 }
 
@@ -679,12 +683,11 @@ function renderListView(): void {
         }
         const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
 
-        // Flags
+        // Flags: D / N only — pending and asking-claude moved to the left
         const flagParts: string[] = []
         if (item.draft_response) { flagParts.push("D") }
         if (item.notes) { flagParts.push("N") }
         const isPending = ds === "pending"
-        if (isPending) { flagParts.push("⏳ WAITING") }
 
         const file = shortFile(item)
         const snippet = itemSnippet(item, contentW - 8)
@@ -704,12 +707,14 @@ function renderListView(): void {
         const line1 = ptr + baseFg(" ") + stStyled + baseFg("  ") + authStyled
             + baseFg(" ".repeat(gap1)) + fileStyled + baseFg("  ") + catStyled
 
-        // ── Line 2: snippet + (right-aligned) flags ──
-        const indent = baseFg("       ")
+        // ── Line 2: pending indicator (left) + snippet + (right-aligned) flags ──
+        // Reserve a fixed 6-cell prefix that's either "⏳" + spaces or all spaces
+        const pendingLead = isPending
+            ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE).bold : C.orange.bold)("   ⏳ ")
+            : baseFg("      ")
+        const snippetLead = baseFg(" ")
         const snippetStyled = baseFg(snippet)
-        const flagColor = isPending
-            ? (isSelected ? crayon.bgHex(BG_SEL).hex(ORANGE) : C.orange)
-            : (isSelected ? C.selCyan : C.cyan)
+        const flagColor = isSelected ? C.selCyan : C.cyan
         const flagStyled = flagParts.length
             ? flagColor(` ${flagParts.join(" ")} `)
             : ""
@@ -718,7 +723,7 @@ function renderListView(): void {
         const l2Right = flagParts.length ? `  ${flagParts.join(" ")}  ` : ""
         const gap2 = Math.max(1, contentW - tuiTextWidth(l2Left) - tuiTextWidth(l2Right))
 
-        const line2 = indent + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
+        const line2 = pendingLead + snippetLead + snippetStyled + baseFg(" ".repeat(gap2)) + flagStyled
 
         // ── Line 3: separator ──
         const line3 = C.sep(`${"─".repeat(contentW)}`)

@@ -67,6 +67,8 @@ export function formatItemStatus(status: ItemStatus): string {
             return `${BOLD}${WHITE}NEW${RESET}`
         case "unaddressed":
             return `${YELLOW}unaddressed${RESET}`
+        case "asked_claude":
+            return `${YELLOW}asked-claude${RESET}`
         case "auto_solved":
             return `${BG_YELLOW}\x1b[30m auto-solved ${RESET}`
         case "solved":
