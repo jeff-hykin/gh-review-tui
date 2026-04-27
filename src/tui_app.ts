@@ -20,7 +20,7 @@ import { truncate } from "./display.ts"
 import { generateClipboardContent } from "./clipboard.ts"
 import { wordWrap } from "./word_wrap.ts"
 import { Toaster } from "./toast.ts"
-import { askAsync, touchTopic, topicForBranch, inboxForBranch } from "./claude_session.ts"
+import { askAsync, touchTopic, topicForBranch, inboxForBranch, ensureGreInstructionBlock } from "./claude_session.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
 
@@ -277,6 +277,19 @@ export async function launchTUI(): Promise<void> {
             toaster.show(`Claude session unavailable (${r.error?.slice(0, 80) ?? "cbg error"})`, { type: "warning", durationMs: 5000 })
         }
     })
+
+    // Ensure the project-local CLAUDE.local.md has the gre instructions
+    // block, so a cbg-spawned Claude session in this repo loads them as
+    // standing context (in addition to the per-question contract).
+    gh.getGitRoot().then(async (root) => {
+        try {
+            const result = await ensureGreInstructionBlock(`${root}/CLAUDE.local.md`)
+            if (result === "created") { toaster.show(`Created CLAUDE.local.md with gre block`, { type: "info", durationMs: 2500 }) }
+            else if (result === "updated") { toaster.show(`Updated gre block in CLAUDE.local.md`, { type: "info", durationMs: 2500 }) }
+        } catch (e) {
+            log("ensureGreInstructionBlock failed:", e instanceof Error ? e.message : String(e))
+        }
+    }).catch(() => { /* not in a git repo, skip */ })
 
     // Single-flight: only one cbg ask at a time per branch. Sharing one inbox
     // (gre-<branch>) means two concurrent asks would evict each other on cbg's

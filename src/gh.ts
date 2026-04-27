@@ -30,6 +30,17 @@ export async function getRemoteUrl(cwd?: string): Promise<string> {
     return result.stdout.trim()
 }
 
+// ── Get git repo root ────────────────────────────────────────────────────
+
+export async function getGitRoot(cwd?: string): Promise<string> {
+    const cmd = $`git rev-parse --show-toplevel`.stdout("piped")
+    if (cwd) {
+        cmd.cwd(cwd)
+    }
+    const result = await cmd
+    return result.stdout.trim()
+}
+
 // ── Find PR for the current branch ───────────────────────────────────────
 
 export async function findPRForBranch(branch: string, remote?: string): Promise<PRMetadata | null> {
