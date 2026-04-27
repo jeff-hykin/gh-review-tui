@@ -407,6 +407,12 @@ const editor = new TextBox({
             textLines[cur.y] = textLine.slice(0, cur.x)
             editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
         }
+        if (ctrl && key === "u") {
+            // Clear the entire current line (line still exists, just empty)
+            textLines[cur.y] = ""
+            cur.x = 0
+            editor.text.value = textLines.join("\n"); editor.cursorPosition.value = { ...cur }; return
+        }
         if (ctrl && key === "w") {
             // Delete word left
             const boundary = wordBoundaryLeft(textLine, cur.x)
