@@ -17,9 +17,10 @@ import { loadState, saveState } from "./state.ts"
 import { syncState } from "./sync.ts"
 import * as gh from "./gh.ts"
 import { truncate } from "./display.ts"
-import { generateClipboardContent, copyToClipboard } from "./clipboard.ts"
+import { generateClipboardContent } from "./clipboard.ts"
 import { wordWrap } from "./word_wrap.ts"
 import { Toaster } from "./toast.ts"
+import { askAsync, touchTopic, topicForBranch, newInboxName } from "./claude_session.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ const C = {
     magenta: crayon.bgHex(BG).hex(MAGENTA), orange: crayon.bgHex(BG).hex(ORANGE), sep: crayon.bgHex(BG).hex(0x45475a),
     selFg: crayon.bgHex(BG_SEL).hex(FG), selDim: crayon.bgHex(BG_SEL).hex(DIM),
     selCyan: crayon.bgHex(BG_SEL).hex(CYAN),
-    badgeNew: crayon.bgHex(YELLOW).hex(BG_SURF).bold, badgeOk: crayon.bgHex(GREEN).hex(BG_SURF),
+    badgeNew: crayon.bgHex(BLUE).hex(BG_SURF).bold, badgeOk: crayon.bgHex(GREEN).hex(BG_SURF),
     badgeAut: crayon.bgHex(ORANGE).hex(BG_SURF), badgeDim: crayon.bgHex(BG).hex(DIM),
     badgeSelDim: crayon.bgHex(BG_SEL).hex(DIM),
     hkKey: crayon.bgHex(BG).hex(CYAN).bold,
@@ -248,6 +249,21 @@ export async function launchTUI(): Promise<void> {
     tui.run()
 
     const toaster = new Toaster(tui, { bg: BG, fg: FG })
+
+    // ── Claude session (cbg) ─────────────────────────────────────────
+    const claudeTopic = topicForBranch(branch)
+    let claudeReady = false
+    touchTopic(claudeTopic).then((r) => {
+        if (r.ok) {
+            claudeReady = true
+            toaster.show(`Claude session ready: ${claudeTopic}`, { type: "info", durationMs: 2000 })
+        } else {
+            toaster.show(`Claude session unavailable (${r.error?.slice(0, 80) ?? "cbg error"})`, { type: "warning", durationMs: 5000 })
+        }
+    })
+
+    // Track in-flight asks so we can mark items auto_solved on reply
+    const pendingAsks = new Set<number>()
 
     // ── Resize handling ─────────────────────────────────────────────
 
@@ -454,7 +470,7 @@ export async function launchTUI(): Promise<void> {
 
         bodyText.value = padLines(lines, BODY_LINES)
         helpText.value =
-            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["o", "open"], ["w", "web"], ["q", "quit"]])
             + "\n"
             + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -616,7 +632,7 @@ export async function launchTUI(): Promise<void> {
             editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
             helpText.value = " " + [
                 hk("up/dn", "comments"), hk("left/right", otherLabel), hk("enter", "edit"),
-                hk("v", "viewed"), hk("c", "clip"), hk("o", "open"), hk("w", "web"),
+                hk("v", "viewed"), hk("c", "claude"), hk("o", "open"), hk("w", "web"),
                 hk("esc", "back"), hk("r", "resolve"), hk("s", "solved"),
             ].join(C.dim("  ")) + "\n "
         }
@@ -701,7 +717,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "u") { unresolveCurrentItem() }
         else if (k === "v") { markCurrentItemViewed() }
         else if (k === "s") { toggleCurrentItemSolved() }
-        else if (k === "c") { clipCurrentItem() }
+        else if (k === "c") { askClaudeForCurrentItem() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
         else if (k === "A") {
@@ -752,7 +768,7 @@ export async function launchTUI(): Promise<void> {
             loadEditorText(); renderDetailView()
         } else if (k === "return") { mode.value = "detail_edit"; renderDetailView() }
         else if (e.ctrl && k === "z") { if (performUndo()) renderDetailView() }
-        else if (k === "c") { clipCurrentItem() }
+        else if (k === "c") { askClaudeForCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "v") { markCurrentItemViewed(); renderDetailView() }
         else if (k === "s") { toggleCurrentItemSolved(); renderDetailView() }
@@ -823,10 +839,37 @@ export async function launchTUI(): Promise<void> {
         item.category = category; saveState(path, state!).catch(() => {}); renderListView()
     }
 
-    async function clipCurrentItem(): Promise<void> {
+    function askClaudeForCurrentItem(): void {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
         const { item, origIndex } = visibleItems[sel]
-        await copyToClipboard(generateClipboardContent(item, origIndex, state!))
+        if (!claudeReady) {
+            toaster.show("Claude session not ready yet — try again in a moment", { type: "warning" })
+            return
+        }
+        if (pendingAsks.has(origIndex)) {
+            toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)}`, { type: "info" })
+            return
+        }
+        const id = itemId(item, origIndex)
+        const question = generateClipboardContent(item, origIndex, state!)
+        pendingAsks.add(origIndex)
+        toaster.show(`Sent ${id} to Claude`, { type: "info", durationMs: 2500 })
+        askAsync({ targetTopic: claudeTopic, fromInbox: newInboxName(), question })
+            .then((reply) => {
+                pendingAsks.delete(origIndex)
+                // Mark auto_solved (orange ◎) so it's visually obvious Claude touched it
+                pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status })
+                item.status = "auto_solved"
+                saveState(path, state!).catch(() => {})
+                if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+                const preview = reply.text.split("\n")[0].slice(0, 80)
+                toaster.show(`${id} solved by Claude — ${preview || "(see notes)"}`, { type: "success", durationMs: 6000 })
+            })
+            .catch((err) => {
+                pendingAsks.delete(origIndex)
+                const msg = err instanceof Error ? err.message : String(err)
+                toaster.show(`Claude ask failed for ${id}: ${msg.slice(0, 120)}`, { type: "error", durationMs: 6000 })
+            })
     }
 
     async function openCurrentItem(): Promise<void> {

@@ -14,7 +14,6 @@ import { Frame } from "deno_tui/components/frame.ts"
 import type { ReviewState, ReviewItem, ItemCategory, ItemStatus } from "./src/types.ts"
 import { itemId, computeDisplayStatus } from "./src/types.ts"
 import { truncate } from "./src/display.ts"
-import { generateClipboardContent, copyToClipboard } from "./src/clipboard.ts"
 import { wordWrap } from "./src/word_wrap.ts"
 import { Toaster } from "./src/toast.ts"
 import { insertAt, textWidth as tuiTextWidth } from "deno_tui/utils/strings.ts"
@@ -243,6 +242,27 @@ tui.dispatch()
 tui.run()
 
 const toaster = new Toaster(tui, { bg: BG, fg: FG })
+
+// ── Fake Claude ask flow (demo) ─────────────────────────────────────────
+const pendingAsks = new Set<number>()
+function fakeClaudeAskForCurrentItem(): void {
+    const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+    const { item, origIndex } = visibleItems[sel]
+    if (pendingAsks.has(origIndex)) {
+        toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)}`, { type: "info" })
+        return
+    }
+    const id = itemId(item, origIndex)
+    pendingAsks.add(origIndex)
+    toaster.show(`Sent ${id} to Claude (demo)`, { type: "info", durationMs: 2000 })
+    setTimeout(() => {
+        pendingAsks.delete(origIndex)
+        pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: "auto_solved" })
+        item.status = "auto_solved"
+        if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+        toaster.show(`${id} solved by Claude — (demo) reply text would go here`, { type: "success", durationMs: 5000 })
+    }, 2500)
+}
 
 // ── Resize handling ─────────────────────────────────────────────────────
 
@@ -525,7 +545,7 @@ const C = {
     selDim:    crayon.bgHex(BG_SEL).hex(DIM),
     selCyan:   crayon.bgHex(BG_SEL).hex(CYAN),
     // Status badge colors (inverted bg)
-    badgeNew:  crayon.bgHex(YELLOW).hex(BG_SURF).bold,
+    badgeNew:  crayon.bgHex(BLUE).hex(BG_SURF).bold,
     badgeOk:   crayon.bgHex(GREEN).hex(BG_SURF),
     badgeAut:  crayon.bgHex(ORANGE).hex(BG_SURF),
     badgeDim:  crayon.bgHex(BG).hex(DIM),
@@ -689,7 +709,7 @@ function renderListView(): void {
 
     bodyText.value = padLines(lines, BODY_LINES)
     helpText.value =
-        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "clip"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "claude"], ["o", "open"], ["w", "web"], ["q", "quit"]])
         + "\n"
         + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["0", "unknown"]])
 
@@ -887,7 +907,7 @@ function renderDetailView(): void {
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         helpText.value = " " + [
             hk("up/dn", "comments"), hk("left/right", otherLabel), hk("enter", "edit"),
-            hk("v", "viewed"), hk("c", "clip"), hk("o", "open"), hk("w", "web"),
+            hk("v", "viewed"), hk("c", "claude"), hk("o", "open"), hk("w", "web"),
             hk("esc", "back"), hk("r", "resolve"), hk("s", "solved"),
         ].join(C.dim("  ")) + "\n "
     }
@@ -1092,7 +1112,7 @@ function handleListKey(e: any): void {
         const next = item.status === "unseen" ? "unaddressed" : "unseen"
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
         item.status = next; renderListView()
-    } else if (k === "c") { const { item, origIndex } = visibleItems[selectedIndex.peek()]; copyToClipboard(generateClipboardContent(item, origIndex, state)) }
+    } else if (k === "c") { fakeClaudeAskForCurrentItem() }
     else if (k === "o") { openCurrentItem() }
     else if (k === "w") { openInBrowser() }
     else if (k === "A") {
@@ -1152,8 +1172,7 @@ function handleDetailBrowseKey(e: any): void {
         mode.value = "detail_edit"
         renderDetailView()
     } else if (k === "c") {
-        const { item, origIndex } = visibleItems[selectedIndex.peek()]
-        copyToClipboard(generateClipboardContent(item, origIndex, state))
+        fakeClaudeAskForCurrentItem()
     } else if (k === "o") {
         openCurrentItem()
     } else if (k === "w") {
