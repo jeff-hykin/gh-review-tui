@@ -230,13 +230,13 @@ async function sendAction(id: string): Promise<void> {
     }
 
     console.log("Sending reply...")
-    const ok = await gh.postReply(state.pr.repo, state.pr.number, item.thread_node_id, item.draft_response)
-    if (ok) {
+    const result = await gh.postReply(state.pr.repo, state.pr.number, item.thread_node_id, item.draft_response)
+    if (result.ok) {
         item.draft_response = ""
         await saveCurrentState(state)
         console.log(`Reply sent for ${id}.`)
     } else {
-        console.error("Failed to send reply.")
+        console.error(`Failed to send reply: ${result.error ?? "unknown error"}`)
         Deno.exit(1)
     }
 }
@@ -254,13 +254,13 @@ async function resolveAction(id: string): Promise<void> {
     }
 
     console.log("Resolving thread...")
-    const ok = await gh.resolveThread(item.thread_node_id)
-    if (ok) {
+    const result = await gh.resolveThread(item.thread_node_id)
+    if (result.ok) {
         item.resolved = true
         await saveCurrentState(state)
         console.log(`Thread ${id} resolved.`)
     } else {
-        console.error("Failed to resolve thread.")
+        console.error(`Failed to resolve thread: ${result.error ?? "unknown error"}`)
         Deno.exit(1)
     }
 }

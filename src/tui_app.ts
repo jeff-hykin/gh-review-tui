@@ -738,7 +738,7 @@ export async function launchTUI(): Promise<void> {
                 const resolvePromises: Promise<void>[] = []
                 for (const { item } of visibleItems) {
                     if (item.type === "comment" && !item.resolved && item.thread_node_id) {
-                        resolvePromises.push(gh.resolveThread(item.thread_node_id).then(ok => { if (ok) item.resolved = true }))
+                        resolvePromises.push(gh.resolveThread(item.thread_node_id).then(r => { if (r.ok) item.resolved = true }))
                     }
                 }
                 helpText.value = ` Resolving ${resolvePromises.length} threads...\n `
@@ -842,8 +842,12 @@ export async function launchTUI(): Promise<void> {
         const { item, origIndex } = visibleItems[sel]
         if (item.type !== "comment" || !item.thread_node_id) return
         pushUndo({ type: "resolve", itemIndex: origIndex, oldValue: item.resolved })
-        const ok = await gh.resolveThread(item.thread_node_id)
-        if (ok) {
+        const result = await gh.resolveThread(item.thread_node_id)
+        if (!result.ok) {
+            toaster.show(`Resolve failed — ${result.error?.split("\n")[0].slice(0, 140) ?? "check gh auth"}`, { type: "error", durationMs: 8000 })
+            return
+        }
+        {
             item.resolved = true; await saveState(path, state!)
             visibleItems = getVisibleItems()
             if (selectedIndex.peek() >= visibleItems.length) { selectedIndex.value = Math.max(0, visibleItems.length - 1) }
@@ -994,14 +998,15 @@ export async function launchTUI(): Promise<void> {
         if (!item.draft_response.trim())      { toaster.show("Draft is empty — type a reply first", { type: "warning" }); return }
         if (!item.thread_node_id)             { toaster.show("Thread has no node ID — re-sync with R", { type: "error" }); return }
         toaster.show("Sending reply...", { type: "info", durationMs: 10000 })
-        const ok = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, item.draft_response)
-        if (ok) {
+        const result = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, item.draft_response)
+        if (result.ok) {
             item.draft_response = ""; editor.text.value = ""
             await saveState(path, state!); saveEditorText()
             mode.value = "detail_browse"; renderDetailView()
             toaster.show("Reply sent", { type: "success" })
         } else {
-            toaster.show("Send failed — check gh auth status", { type: "error", durationMs: 6000 })
+            const detail = result.error ? result.error.split("\n")[0].slice(0, 140) : "check gh auth status"
+            toaster.show(`Send failed — ${detail}`, { type: "error", durationMs: 8000 })
         }
     }
 

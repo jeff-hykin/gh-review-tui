@@ -238,10 +238,15 @@ export async function checkMergeConflict(repo: string, prNumber: number): Promis
 
 // ── Post a reply to a review thread ──────────────────────────────────────
 
-export async function postReply(repo: string, prNumber: number, threadNodeId: string, body: string): Promise<boolean> {
+export interface MutationResult { ok: boolean; error?: string }
+
+export async function postReply(_repo: string, _prNumber: number, threadNodeId: string, body: string): Promise<MutationResult> {
+    // addPullRequestReviewComment takes pullRequestReviewId (a pending review),
+    // not pullRequestReviewThreadId. For replying to an existing thread the
+    // correct mutation is addPullRequestReviewThreadReply.
     const mutation = `
         mutation($threadId: ID!, $body: String!) {
-            addPullRequestReviewComment(input: {
+            addPullRequestReviewThreadReply(input: {
                 pullRequestReviewThreadId: $threadId
                 body: $body
             }) {
@@ -251,14 +256,17 @@ export async function postReply(repo: string, prNumber: number, threadNodeId: st
     `
 
     const result = await $`gh api graphql -f query=${mutation} -F threadId=${threadNodeId} -F body=${body}`
-        .stdout("piped").noThrow()
+        .stdout("piped").stderr("piped").noThrow()
 
-    return result.code === 0
+    if (result.code === 0) { return { ok: true } }
+    const stderr = result.stderr.trim() || `gh api exited ${result.code}`
+    const stdout = result.stdout.trim()
+    return { ok: false, error: stderr || stdout }
 }
 
 // ── Resolve a review thread ─────────────────────────────────────────────
 
-export async function resolveThread(threadNodeId: string): Promise<boolean> {
+export async function resolveThread(threadNodeId: string): Promise<MutationResult> {
     const mutation = `
         mutation($threadId: ID!) {
             resolveReviewThread(input: { threadId: $threadId }) {
@@ -268,9 +276,12 @@ export async function resolveThread(threadNodeId: string): Promise<boolean> {
     `
 
     const result = await $`gh api graphql -f query=${mutation} -F threadId=${threadNodeId}`
-        .stdout("piped").noThrow()
+        .stdout("piped").stderr("piped").noThrow()
 
-    return result.code === 0
+    if (result.code === 0) { return { ok: true } }
+    const stderr = result.stderr.trim() || `gh api exited ${result.code}`
+    const stdout = result.stdout.trim()
+    return { ok: false, error: stderr || stdout }
 }
 
 // ── Fetch failed CI run logs ─────────────────────────────────────────────
