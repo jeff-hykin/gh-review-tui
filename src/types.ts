@@ -129,7 +129,11 @@ export function computeDisplayStatus(item: ReviewItem, ghUser: string): DisplayS
         if (item.resolved) {
             return "resolved"
         }
-        if (item.comments.length > 0) {
+        // "pending" = there's a back-and-forth where the user just replied
+        // and is waiting on someone else. A single comment by the user (e.g.
+        // a self-comment on their own PR) isn't really "waiting" on anyone
+        // specific, so don't flag those as pending.
+        if (item.comments.length > 1) {
             const lastComment = item.comments[item.comments.length - 1]
             if (lastComment.author === ghUser) {
                 return "pending"

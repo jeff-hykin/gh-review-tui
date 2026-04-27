@@ -23,6 +23,20 @@ Deno.test("computeDisplayStatus: response_needed when reviewer reply is last", (
     assertEquals(result, "response_needed")
 })
 
+Deno.test("computeDisplayStatus: single comment by user is NOT pending", () => {
+    const item = {
+        ...sampleComment,
+        comments: [{
+            id: "x",
+            author: "jeff-hykin",
+            body: "self comment",
+            created_at: "2026-04-20T10:00:00Z",
+        }],
+    }
+    const result = computeDisplayStatus(item, "jeff-hykin")
+    assertEquals(result, "response_needed")
+})
+
 Deno.test("computeDisplayStatus: resolved when thread is resolved", () => {
     const item = { ...sampleComment, resolved: true }
     const result = computeDisplayStatus(item, "jeff-hykin")
