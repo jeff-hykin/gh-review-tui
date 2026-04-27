@@ -57,17 +57,21 @@ export function askAsync(opts: AskOptions): Promise<AskResult> {
     })
 }
 
-// Build a stable inbox name for one in-flight ask. Unique per gre process
-// + ask sequence so concurrent asks don't evict each other.
-let askSeq = 0
-export function newInboxName(): string {
-    return `gre-${Deno.pid}-${Date.now().toString(36)}-${(askSeq++).toString(36)}`
+// Sanitize a branch name into something safe to use as a topic / inbox
+// identifier. Strips path separators and other characters that might
+// confuse cbg target resolution; keeps the name recognizable.
+function sanitizeBranch(branch: string): string {
+    return branch.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "default"
 }
 
-// Sanitize a branch name into something safe to use as a topic identifier.
-// Strips path separators and other characters that might confuse cbg target
-// resolution; keeps the name recognizable.
 export function topicForBranch(branch: string): string {
-    const safe = branch.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
-    return `gre-${safe || "default"}`
+    return `gre-${sanitizeBranch(branch)}`
+}
+
+// Inbox is shared across all asks for a branch — accumulates replies as a
+// per-branch record at $CBG_DIR/inboxes/<name>/messages.jsonl. Tradeoff:
+// concurrent asks on the same branch would evict each other on cbg's side,
+// so callers must single-flight (only one ask in flight per branch).
+export function inboxForBranch(branch: string): string {
+    return `gre-${sanitizeBranch(branch)}`
 }

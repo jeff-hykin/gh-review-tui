@@ -20,7 +20,7 @@ import { truncate } from "./display.ts"
 import { generateClipboardContent } from "./clipboard.ts"
 import { wordWrap } from "./word_wrap.ts"
 import { Toaster } from "./toast.ts"
-import { askAsync, touchTopic, topicForBranch, newInboxName } from "./claude_session.ts"
+import { askAsync, touchTopic, topicForBranch, inboxForBranch } from "./claude_session.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
 
@@ -252,6 +252,7 @@ export async function launchTUI(): Promise<void> {
 
     // ── Claude session (cbg) ─────────────────────────────────────────
     const claudeTopic = topicForBranch(branch)
+    const claudeInbox = inboxForBranch(branch)
     let claudeReady = false
     touchTopic(claudeTopic).then((r) => {
         if (r.ok) {
@@ -262,7 +263,11 @@ export async function launchTUI(): Promise<void> {
         }
     })
 
-    // Track in-flight asks so we can mark items auto_solved on reply
+    // Single-flight: only one cbg ask at a time per branch. Sharing one inbox
+    // (gre-<branch>) means two concurrent asks would evict each other on cbg's
+    // side, so this guard refuses a second ask until the first one returns.
+    // The trade-off (kept by design): the inbox file accumulates a per-branch
+    // record of every Claude exchange.
     const pendingAsks = new Set<number>()
 
     // ── Resize handling ─────────────────────────────────────────────
@@ -850,11 +855,15 @@ export async function launchTUI(): Promise<void> {
             toaster.show(`Already waiting on Claude for ${itemId(item, origIndex)}`, { type: "info" })
             return
         }
+        if (pendingAsks.size > 0) {
+            toaster.show(`Claude is busy on another item — wait for it to reply (shared inbox: ${claudeInbox})`, { type: "warning", durationMs: 4000 })
+            return
+        }
         const id = itemId(item, origIndex)
         const question = generateClipboardContent(item, origIndex, state!)
         pendingAsks.add(origIndex)
         toaster.show(`Sent ${id} to Claude`, { type: "info", durationMs: 2500 })
-        askAsync({ targetTopic: claudeTopic, fromInbox: newInboxName(), question })
+        askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
             .then((reply) => {
                 pendingAsks.delete(origIndex)
                 // Mark auto_solved (orange ◎) so it's visually obvious Claude touched it
