@@ -101,6 +101,7 @@ interface GHReviewThread {
             line: number | null
             diffHunk: string
             databaseId: number
+            url: string
         }[]
     }
 }
@@ -119,6 +120,7 @@ export async function fetchReviewThreads(repo: string, prNumber: number): Promis
                                 nodes {
                                     id
                                     databaseId
+                                    url
                                     author { login }
                                     body
                                     createdAt
@@ -164,6 +166,7 @@ export async function fetchReviewThreads(repo: string, prNumber: number): Promis
                 body: c.body,
                 created_at: c.createdAt,
                 node_id: c.id,
+                url: c.url,
             })),
             resolved: thread.isResolved,
             draft_response: "",

@@ -984,8 +984,15 @@ export async function launchTUI(): Promise<void> {
         const { item } = visibleItems[sel]
         const prUrl = state!.pr.url
         const { default: $ } = await import("jsr:@david/dax@0.42")
-        if (item.type === "comment" && item.thread_id) {
-            await $`open ${prUrl}/files#r${item.thread_id}`.noThrow()
+        if (item.type === "comment") {
+            // Prefer the canonical comment URL captured at sync time — it
+            // points the browser straight at the comment in the conversation
+            // tab. Fall back to the files-tab fragment for older state files
+            // that don't have `url` yet.
+            const firstComment = item.comments[0]
+            const target = firstComment?.url
+                ?? (item.thread_id ? `${prUrl}/files#r${item.thread_id}` : prUrl)
+            await $`open ${target}`.noThrow()
         } else if (item.type === "ci_failure") {
             await $`open ${item.url}`.noThrow()
         } else {

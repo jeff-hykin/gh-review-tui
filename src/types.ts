@@ -15,6 +15,10 @@ export interface Comment {
     created_at: string
     // GH node ID for API operations
     node_id?: string
+    // Direct GitHub URL to this comment (canonical, scrolls to it).
+    // Optional because older state files may not have it; fall back to a
+    // PR-files fragment URL constructed from `id` when missing.
+    url?: string
 }
 
 export interface CommentItem {

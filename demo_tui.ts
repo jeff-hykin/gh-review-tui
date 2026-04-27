@@ -954,10 +954,11 @@ async function openInBrowser(): Promise<void> {
     const sel = selectedIndex.peek()
     if (sel >= visibleItems.length) return
     const { item } = visibleItems[sel]
-    // Build the GitHub URL for this comment thread
     const prUrl = state.pr.url
-    if (item.type === "comment" && item.thread_id) {
-        const url = `${prUrl}/files#r${item.thread_id}`
+    if (item.type === "comment") {
+        const firstComment = item.comments[0]
+        const url = firstComment?.url
+            ?? (item.thread_id ? `${prUrl}/files#r${item.thread_id}` : prUrl)
         const { default: $ } = await import("jsr:@david/dax@0.42")
         await $`open ${url}`.noThrow()
     } else if (item.type === "ci_failure") {
