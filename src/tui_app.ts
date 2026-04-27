@@ -665,8 +665,8 @@ export async function launchTUI(): Promise<void> {
             editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
             editor.state.value = "active"
             const editLabel = target === "notes" ? "NOTES" : "REPLY"
-            const submitHelp = target === "draft" ? `  ${hk("ctrl+s", "send reply")}` : ""
-            helpText.value = ` ${C.dim("Editing " + editLabel + "...")}${submitHelp}  ${hk("esc", "back to thread")}\n `
+            const submitHelp = target === "draft" ? `  ${hk("alt+enter", "send")}` : ""
+            helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("ctrl+s", "save")}${submitHelp}  ${hk("esc", "back")}\n `
         } else {
             setFrameColor(editorFrame, DIM)
             const browseLabel = target === "notes" ? "NOTES" : "REPLY"
@@ -835,11 +835,21 @@ export async function launchTUI(): Promise<void> {
     }
 
     function handleDetailEditKey(e: any): void {
-        // ctrl+s is the reliable submit key — most terminals strip the ctrl/meta
-        // modifier from enter before sending (cmd+enter often isn't forwarded at
-        // all, ctrl+enter arrives as plain \r), so we can't depend on them.
-        const isSubmit = (e.ctrl && e.key === "s") || (e.key === "return" && (e.meta || e.ctrl))
-        if (isSubmit) { if (editTarget.peek() === "draft") { sendCurrentDraft() } return }
+        // alt/option+enter submits the reply. cmd+enter accepted as a bonus
+        // for terminals that forward it (most strip the modifier off return
+        // and deliver plain \r, which the editor treats as a newline).
+        if (e.key === "return" && (e.meta || e.ctrl)) {
+            if (editTarget.peek() === "draft") { sendCurrentDraft() }
+            return
+        }
+        // ctrl+s now means "save explicitly" (auto-save runs on every text
+        // change anyway via editor.text.subscribe, but the toast confirms
+        // the user-facing semantic).
+        if (e.ctrl && e.key === "s") {
+            saveEditorText()
+            toaster.show("Draft saved", { type: "success", durationMs: 1800 })
+            return
+        }
         if (e.key === "escape") { saveEditorText(); mode.value = "detail_browse"; renderDetailView() }
     }
 
@@ -1064,12 +1074,25 @@ export async function launchTUI(): Promise<void> {
         if (item.type !== "comment")          { toaster.show("Can only reply to comment threads", { type: "error" }); return }
         if (!item.draft_response.trim())      { toaster.show("Draft is empty — type a reply first", { type: "warning" }); return }
         if (!item.thread_node_id)             { toaster.show("Thread has no node ID — re-sync with R", { type: "error" }); return }
+        const sentBody = item.draft_response
         toaster.show("Sending reply...", { type: "info", durationMs: 10000 })
-        const result = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, item.draft_response)
+        const result = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, sentBody)
         if (result.ok) {
+            // Optimistically append the sent reply to the local thread so the
+            // TUI reflects "I just replied; waiting on the reviewer" without
+            // needing a full sync. The next `gre sync` will reconcile with
+            // GitHub's authoritative copy (which gets the real comment id).
+            item.comments.push({
+                id: `local-${Date.now()}`,
+                author: state!.gh_user,
+                body: sentBody,
+                created_at: new Date().toISOString(),
+            })
             item.draft_response = ""; editor.text.value = ""
             await saveState(path, state!); saveEditorText()
             mode.value = "detail_browse"; renderDetailView()
+            // computeDisplayStatus now sees user as last author + comments.length > 1
+            // → display_status = "pending" → orange ⏳ on the left of line 2.
             toaster.show("Reply sent", { type: "success" })
         } else {
             const detail = result.error ? result.error.split("\n")[0].slice(0, 140) : "check gh auth status"

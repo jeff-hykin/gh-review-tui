@@ -925,8 +925,8 @@ function renderDetailView(): void {
         editorOverlayRect.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
         editor.state.value = "active"
         const editLabel = target === "notes" ? "NOTES" : "REPLY"
-        const submitHelp = target === "draft" ? `  ${hk("ctrl+s", "send reply")}` : ""
-        helpText.value = ` ${C.dim("Editing " + editLabel + "...")}${submitHelp}  ${hk("esc", "back to thread")}\n `
+        const submitHelp = target === "draft" ? `  ${hk("alt+enter", "send")}` : ""
+        helpText.value = ` ${C.dim("Editing " + editLabel + "...")}  ${hk("ctrl+s", "save")}${submitHelp}  ${hk("esc", "back")}\n `
     } else {
         setFrameColor(editorFrame, DIM)
         // Show "press enter" overlay on top of editor with tab label
@@ -1247,20 +1247,23 @@ function handleDetailBrowseKey(e: any): void {
 }
 
 function handleDetailEditKey(e: any): void {
-    // ctrl+s = submit (reliable). Keep cmd+enter/ctrl+enter as a bonus for
-    // terminals with extended keyboard protocols, though most strip modifiers
-    // from enter and deliver it as plain \r.
-    const isSubmit = (e.ctrl && e.key === "s") || (e.key === "return" && (e.meta || e.ctrl))
-    if (isSubmit) {
+    // alt/option+enter = submit. cmd+enter/ctrl+enter accepted as a bonus.
+    if (e.key === "return" && (e.meta || e.ctrl)) {
         if (editTarget.peek() !== "draft") {
-            helpText.value = ` ${C.red("✗")} Only reply tab can be submitted\n `
+            toaster.show("Only reply tab can be submitted", { type: "error" })
             return
         }
         log("submit detected — would send reply (demo)")
         saveEditorText()
         mode.value = "detail_browse"
         renderDetailView()
-        helpText.value = ` ${C.green("✓")} (demo) would have sent reply\n `
+        toaster.show("(demo) would have sent reply", { type: "success" })
+        return
+    }
+    // ctrl+s = explicit save (auto-save also runs on every keystroke)
+    if (e.ctrl && e.key === "s") {
+        saveEditorText()
+        toaster.show("Draft saved", { type: "success", durationMs: 1800 })
         return
     }
     if (e.key === "escape") {
