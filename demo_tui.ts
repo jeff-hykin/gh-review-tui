@@ -16,6 +16,7 @@ import { itemId, computeDisplayStatus } from "./src/types.ts"
 import { truncate } from "./src/display.ts"
 import { generateClipboardContent, copyToClipboard } from "./src/clipboard.ts"
 import { wordWrap } from "./src/word_wrap.ts"
+import { Toaster } from "./src/toast.ts"
 import { insertAt, textWidth as tuiTextWidth } from "deno_tui/utils/strings.ts"
 import { clamp } from "deno_tui/utils/numbers.ts"
 
@@ -240,6 +241,8 @@ handleInput(tui)
 handleMouseControls(tui)
 tui.dispatch()
 tui.run()
+
+const toaster = new Toaster(tui, { bg: BG, fg: FG })
 
 // ── Resize handling ─────────────────────────────────────────────────────
 
@@ -1047,6 +1050,19 @@ function handleListKey(e: any): void {
         renderDetailView()
     } else if (k === "q" || k === "escape") {
         tui.destroy(); Deno.exit(0)
+    } else if (k === "t") {
+        // Demo: cycle through toast types so the system is testable
+        const types = ["info", "success", "warning", "error"] as const
+        const idx = (Number((globalThis as any).__toastIdx ?? 0)) % types.length
+        ;(globalThis as any).__toastIdx = idx + 1
+        const t = types[idx]
+        const messages = {
+            info:    "This is an info toast",
+            success: "Reply sent",
+            warning: "Draft is empty — type a reply first",
+            error:   "Send failed — check gh auth status",
+        } as const
+        toaster.show(messages[t], { type: t })
     } else if (e.ctrl && k === "z") {
         if (performUndo()) {
             if (mode.peek() === "list") { renderListView() }

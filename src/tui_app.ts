@@ -19,6 +19,7 @@ import * as gh from "./gh.ts"
 import { truncate } from "./display.ts"
 import { generateClipboardContent, copyToClipboard } from "./clipboard.ts"
 import { wordWrap } from "./word_wrap.ts"
+import { Toaster } from "./toast.ts"
 
 // ── Logging ──────────────────────────────────────────────────────────────
 
@@ -246,6 +247,8 @@ export async function launchTUI(): Promise<void> {
     tui.dispatch()
     tui.run()
 
+    const toaster = new Toaster(tui, { bg: BG, fg: FG })
+
     // ── Resize handling ─────────────────────────────────────────────
 
     function recalcLayout(): void {
@@ -263,6 +266,7 @@ export async function launchTUI(): Promise<void> {
 
     Deno.addSignalListener("SIGWINCH", () => {
         recalcLayout()
+        toaster.relayout()
         if (mode.peek() === "list") { renderListView() }
         else { renderDetailView() }
     })
@@ -850,18 +854,18 @@ export async function launchTUI(): Promise<void> {
     async function sendCurrentDraft(): Promise<void> {
         const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
         const { item } = visibleItems[sel]
-        if (item.type !== "comment") { helpText.value = " ✗ Can only reply to comment threads\n "; return }
-        if (!item.draft_response.trim()) { helpText.value = " ✗ Draft is empty — type a reply first\n "; return }
-        if (!item.thread_node_id) { helpText.value = " ✗ Thread has no node ID (re-sync with R)\n "; return }
-        helpText.value = ` ${C.cyan.bold("…")} Sending reply to GitHub...\n `
+        if (item.type !== "comment")          { toaster.show("Can only reply to comment threads", { type: "error" }); return }
+        if (!item.draft_response.trim())      { toaster.show("Draft is empty — type a reply first", { type: "warning" }); return }
+        if (!item.thread_node_id)             { toaster.show("Thread has no node ID — re-sync with R", { type: "error" }); return }
+        toaster.show("Sending reply...", { type: "info", durationMs: 10000 })
         const ok = await gh.postReply(state!.pr.repo, state!.pr.number, item.thread_node_id, item.draft_response)
         if (ok) {
             item.draft_response = ""; editor.text.value = ""
             await saveState(path, state!); saveEditorText()
             mode.value = "detail_browse"; renderDetailView()
-            helpText.value = ` ${C.green("✓")} Reply sent\n `
+            toaster.show("Reply sent", { type: "success" })
         } else {
-            helpText.value = ` ${C.red("✗")} Send failed — check gh auth status\n `
+            toaster.show("Send failed — check gh auth status", { type: "error", durationMs: 6000 })
         }
     }
 
