@@ -283,9 +283,10 @@ export async function launchTUI(): Promise<void> {
     // side, so this guard refuses a second ask until the first one returns.
     // The trade-off (kept by design): the inbox file accumulates a per-branch
     // record of every Claude exchange.
-    // Map index → cancel fn for in-flight asks (so user can abort from UI)
+    // Map index → cancel fn for in-flight asks (so user can abort from UI).
+    // Intentionally no auto-timeout: real Claude fixes can take a long time
+    // (multi-minute compile/test loops). The `x` key is the recovery hatch.
     const pendingAsks = new Map<number, () => void>()
-    const ASK_TIMEOUT_MS = 10 * 60 * 1000  // 10 min — a stuck agent shouldn't hang forever
 
     // ── Resize handling ─────────────────────────────────────────────
 
@@ -887,7 +888,7 @@ export async function launchTUI(): Promise<void> {
         const id = itemId(item, origIndex)
         const question = generateClipboardContent(item, origIndex, state!)
         log("askClaude:", { id, topic: claudeTopic, inbox: claudeInbox, qLen: question.length })
-        const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question, timeoutMs: ASK_TIMEOUT_MS })
+        const handle = askAsync({ targetTopic: claudeTopic, fromInbox: claudeInbox, question })
         pendingAsks.set(origIndex, handle.cancel)
         if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
         toaster.show(`Sent ${id} to Claude (x to cancel)`, { type: "info", durationMs: 2500 })
