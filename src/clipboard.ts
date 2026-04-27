@@ -12,6 +12,11 @@ export function generateClipboardContent(
     const id = itemId(item, index)
     const parts: string[] = []
 
+    // 0. Agent contract — embedded so it travels with every cbg ask, since
+    // CLAUDE.local.md propagation across the user's project tree is unreliable.
+    parts.push(generateAgentContract(id))
+    parts.push("")
+
     // 1. Natural language overview
     parts.push(generateOverview(item, state))
     parts.push("")
@@ -24,6 +29,28 @@ export function generateClipboardContent(
     parts.push(generateCLIInstructions(id))
 
     return parts.join("\n")
+}
+
+function generateAgentContract(id: string): string {
+    return `You're being asked by gre (GitHub Review Explorer) to address one PR review item (${id}).
+
+REPLY PROTOCOL: When you're done — whether you fixed the code, drafted a reply, decided it's wontfix, or are blocked — call the tell_session tool with target set to the inbox in the [from inbox: …] hint above. Your text becomes the toast the user sees in their TUI; first line should be a short status, then details.
+
+If you only post in channel chat without calling tell_session, the user's gre process is parked indefinitely waiting on you. Use tell_session.
+
+SIDE-EFFECTS via the gre CLI (run from this repo's working directory):
+- gre set ${id} status auto_solved   — mark addressed; renders orange ◎ in the TUI
+- gre set ${id} category <fix|discussion|wontfix|large_change|unknown>
+- gre draft ${id} "<reply text>"     — draft a reply for the user to review before sending
+- gre note ${id} "<note>"            — context/reasoning, not sent to GitHub
+- gre summary ${id} "<one-liner>"    — TUI list summary
+
+DO NOT call gre send or gre resolve — those are user-only.
+
+If the fix is a single focused code change, make it as one commit on the current branch.
+
+---
+`
 }
 
 function generateOverview(item: ReviewItem, state: ReviewState): string {
@@ -122,21 +149,8 @@ function generateXML(item: ReviewItem, index: number, state: ReviewState): strin
 }
 
 function generateCLIInstructions(id: string): string {
-    return `After making changes, use these commands to update the review state:
-
-# Mark the item as auto-solved (you think it's addressed but I haven't confirmed):
-gre set ${id} status auto_solved
-
-# Write a draft response for me to review before sending:
-gre draft ${id} "Your explanation of what was changed and why"
-
-# Add notes (context, reasoning, etc):
-gre note ${id} "Your notes here"
-
-# Set the summary (short description for the list view):
-gre summary ${id} "Brief description of what this item is about"
-
-# If this is a code fix, make it as a single focused commit on the current branch.`
+    // Brief reminder; full contract (with don't-call list) is at the top of the message.
+    return `Reminder: update review state via 'gre set ${id} status auto_solved', 'gre draft ${id} "..."', 'gre note ${id} "..."', or 'gre summary ${id} "..."'. Reply via tell_session when done.`
 }
 
 // ── Copy text to clipboard (macOS/Linux) ─────────────────────────────────
