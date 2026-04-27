@@ -198,6 +198,21 @@ export async function launchTUI(): Promise<void> {
     const commentScrollOffset = new Signal(0)
     let confirmingResolveAll = false
 
+    // List-view scroll: index of the topmost visible item. Decoupled from
+    // selectedIndex so up/down moves the cursor within the visible window
+    // before scrolling. ensureSelectionVisible() maintains the invariant
+    // scrollTop ≤ sel ≤ scrollTop + MAX_VISIBLE_ITEMS - 1.
+    let scrollTop = 0
+    function ensureSelectionVisible(): void {
+        const sel = selectedIndex.peek()
+        if (sel < scrollTop) { scrollTop = sel }
+        else if (sel > scrollTop + MAX_VISIBLE_ITEMS - 1) { scrollTop = sel - MAX_VISIBLE_ITEMS + 1 }
+        // Clamp on shrinks / item removals
+        const maxTop = Math.max(0, visibleItems.length - MAX_VISIBLE_ITEMS)
+        if (scrollTop > maxTop) { scrollTop = maxTop }
+        if (scrollTop < 0) { scrollTop = 0 }
+    }
+
     // Undo stack
     type UndoAction = { type: "status"; itemIndex: number; oldValue: string } | { type: "category"; itemIndex: number; oldValue: string } | { type: "resolve"; itemIndex: number; oldValue: boolean } | { type: "text"; oldText: string; field: "notes" | "draft_response"; itemIndex: number }
     const undoStack: UndoAction[] = []
@@ -426,8 +441,8 @@ export async function launchTUI(): Promise<void> {
 
         const lines: string[] = []
         const sel = selectedIndex.peek()
-        let startIdx = 0
-        if (sel >= MAX_VISIBLE_ITEMS) { startIdx = sel - MAX_VISIBLE_ITEMS + 1 }
+        ensureSelectionVisible()
+        const startIdx = scrollTop
         const endIdx = Math.min(startIdx + MAX_VISIBLE_ITEMS, visibleItems.length)
 
         for (let i = startIdx; i < endIdx; i++) {

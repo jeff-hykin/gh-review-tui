@@ -159,6 +159,19 @@ const commentScrollOffset = new Signal(0)
 let detailCommentOffsets: number[] = []
 let confirmingResolveAll = false
 
+// List-view scroll: index of topmost visible item. Decoupled from
+// selectedIndex so up/down moves the cursor within the visible window
+// before scrolling.
+let scrollTop = 0
+function ensureSelectionVisible(): void {
+    const sel = selectedIndex.peek()
+    if (sel < scrollTop) { scrollTop = sel }
+    else if (sel > scrollTop + MAX_VISIBLE_ITEMS - 1) { scrollTop = sel - MAX_VISIBLE_ITEMS + 1 }
+    const maxTop = Math.max(0, visibleItems.length - MAX_VISIBLE_ITEMS)
+    if (scrollTop > maxTop) { scrollTop = maxTop }
+    if (scrollTop < 0) { scrollTop = 0 }
+}
+
 // ── Undo system ─────────────────────────────────────────────────────────
 type UndoAction = {
     type: "status"; itemIndex: number; oldValue: string; newValue: string
@@ -638,8 +651,8 @@ function renderListView(): void {
     const lines: string[] = []
     const sel = selectedIndex.peek()
 
-    let startIdx = 0
-    if (sel >= MAX_VISIBLE_ITEMS) { startIdx = sel - MAX_VISIBLE_ITEMS + 1 }
+    ensureSelectionVisible()
+    const startIdx = scrollTop
     const endIdx = Math.min(startIdx + MAX_VISIBLE_ITEMS, visibleItems.length)
 
     for (let i = startIdx; i < endIdx; i++) {
