@@ -279,6 +279,22 @@ function fakeClaudeAskForCurrentItem(): void {
         toaster.show(`Queued ${id} (${askQueue.length} ahead) — demo`, { type: "info", durationMs: 3000 })
     }
 }
+function fakeCreateIssueForCurrentItem(): void {
+    const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+    const { item, origIndex } = visibleItems[sel]
+    if (item.type !== "comment") {
+        toaster.show("Issues can only be spun off comment threads", { type: "warning" })
+        return
+    }
+    const id = itemId(item, origIndex)
+    toaster.show(`Generating ${id} → issue (demo)…`, { type: "info", durationMs: 2500 })
+    setTimeout(() => {
+        ;(item.linked_issues ??= []).push(`https://github.com/example/example/issues/${42 + (item.linked_issues?.length ?? 0)}`)
+        if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+        toaster.show(`Issue created (demo) — see I flag on ${id}`, { type: "success", durationMs: 4000 })
+    }, 1800)
+}
+
 function fireFakeAsk(origIndex: number): void {
     const item = state.items[origIndex]
     if (!item) return
@@ -710,6 +726,9 @@ function renderListView(): void {
         const flagParts: string[] = []
         if (item.draft_response) { flagParts.push("D") }
         if (item.notes) { flagParts.push("N") }
+        if (item.type === "comment" && item.linked_issues && item.linked_issues.length > 0) {
+            flagParts.push(item.linked_issues.length > 1 ? `I${item.linked_issues.length}` : "I")
+        }
         const isPending = ds === "pending"
 
         const file = shortFile(item)
@@ -756,7 +775,7 @@ function renderListView(): void {
 
     bodyText.value = padLines(lines, BODY_LINES)
     helpText.value =
-        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "claude"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+        helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["A", "resolve-all"], ["c", "claude"], ["i", "issue"], ["o", "open"], ["w", "web"], ["q", "quit"]])
         + "\n"
         + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["5", "nit"], ["6", "later"], ["0", "unknown"]])
 
@@ -1161,6 +1180,7 @@ function handleListKey(e: any): void {
         pushUndo({ type: "status", itemIndex: origIndex, oldValue: item.status, newValue: next })
         item.status = next; renderListView()
     } else if (k === "c") { fakeClaudeAskForCurrentItem() }
+    else if (k === "i") { fakeCreateIssueForCurrentItem() }
     else if (k === "o") { openCurrentItem() }
     else if (k === "w") { openInBrowser() }
     else if (k === "A") {

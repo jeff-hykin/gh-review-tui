@@ -38,6 +38,10 @@ export interface CommentItem {
     draft_response: string
     notes: string
     summary: string
+    // GitHub issue URLs created from this comment via the `i` key. Array
+    // because the user can fire `i` multiple times if they want to track
+    // separate issues spun off from the same comment thread.
+    linked_issues?: string[]
 }
 
 // ── CI failure data ──────────────────────────────────────────────────────

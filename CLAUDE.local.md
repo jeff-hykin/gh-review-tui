@@ -56,10 +56,15 @@ If a fix is a single focused change, make it as one commit. After committing:
 
 If it's `wontfix` or needs discussion, capture your reasoning in notes/draft per the rules above and set category if it's still `unknown` — don't commit code.
 
+## Linked issues
+
+If the user pressed `i` on a comment, gre spun off a GitHub issue from it via `claude -p` + `gh issue create` and recorded the issue URL on the item's `linked_issues` array. The list view shows an `I` (or `Iₙ`) flag on those items. If you're addressing a comment that has linked issues, mention the issue URL in your reply or note so it stays threaded.
+
 ## Do NOT call
 
 - `gre send` — posts the draft to GitHub. User-only.
 - `gre resolve` — resolves the thread on GitHub. User-only.
+- Don't run `gh issue create` directly — that's the user's `i` key flow.
 
 ## Special case: reached via `cbg ask` from the gre TUI
 

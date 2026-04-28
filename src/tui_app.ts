@@ -489,12 +489,14 @@ export async function launchTUI(): Promise<void> {
             else if (item.type === "merge_conflict") { authName = "Merge Conflict" }
             const hue = (item.type === "ci_failure" || item.type === "merge_conflict") ? RED : authorHue(authName)
 
-            // Right-side flags: just D / N now (pending and asking moved to
-            // the left side per user request — asked_claude is now a real
-            // status badge, pending shows as a left ⏳ indicator on line 2).
+            // Right-side flags: D / N / I now (pending + asking moved to the
+            // left side; asked_claude is the status badge there).
             const flagParts: string[] = []
             if (item.draft_response) { flagParts.push("D") }
             if (item.notes) { flagParts.push("N") }
+            if (item.type === "comment" && item.linked_issues && item.linked_issues.length > 0) {
+                flagParts.push(item.linked_issues.length > 1 ? `I${item.linked_issues.length}` : "I")
+            }
             const isPending = ds === "pending"
 
             const file = shortFile(item)
@@ -530,7 +532,7 @@ export async function launchTUI(): Promise<void> {
 
         bodyText.value = padLines(lines, BODY_LINES)
         helpText.value =
-            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["x", "cancel-ask"], ["o", "open"], ["w", "web"], ["q", "quit"]])
+            helpBar([["up/dn", "navigate"], ["enter", "detail"], ["v", "viewed"], ["s", "solved"], ["r", "resolve"], ["u", "unresolve"], ["A", "resolve-all"], ["c", "claude"], ["x", "cancel-ask"], ["i", "issue"], ["o", "open"], ["w", "web"], ["q", "quit"]])
             + "\n"
             + helpBar([["/", "search"], ["ctrl+z", "undo"], ["1", "fix"], ["2", "discuss"], ["3", "wontfix"], ["4", "large"], ["5", "nit"], ["6", "later"], ["0", "unknown"], ["R", "sync"]])
         editor.rectangle.value = { column: PAD_LEFT, row: 9999, width: contentW, height: editorHeight }
@@ -779,6 +781,7 @@ export async function launchTUI(): Promise<void> {
         else if (k === "s") { toggleCurrentItemSolved() }
         else if (k === "c") { askClaudeForCurrentItem() }
         else if (k === "x") { cancelPendingAskForCurrentItem() }
+        else if (k === "i") { createIssueForCurrentItem() }
         else if (k === "o") { openCurrentItem() }
         else if (k === "w") { openInBrowser() }
         else if (k === "A") {
@@ -833,6 +836,7 @@ export async function launchTUI(): Promise<void> {
         else if (e.ctrl && k === "z") { if (performUndo()) renderDetailView() }
         else if (k === "c") { askClaudeForCurrentItem() }
         else if (k === "x") { cancelPendingAskForCurrentItem() }
+        else if (k === "i") { createIssueForCurrentItem() }
         else if (k === "r") { resolveCurrentItem().then(() => renderDetailView()) }
         else if (k === "v") { markCurrentItemViewed(); renderDetailView() }
         else if (k === "s") { toggleCurrentItemSolved(); renderDetailView() }
@@ -915,6 +919,71 @@ export async function launchTUI(): Promise<void> {
         const { item, origIndex } = visibleItems[sel]
         pushUndo({ type: "category", itemIndex: origIndex, oldValue: item.category })
         item.category = category; saveState(path, state!).catch(() => {}); renderListView()
+    }
+
+    async function createIssueForCurrentItem(): Promise<void> {
+        const sel = selectedIndex.peek(); if (sel >= visibleItems.length) return
+        const { item, origIndex } = visibleItems[sel]
+        if (item.type !== "comment") {
+            toaster.show("Issues can only be spun off comment threads", { type: "warning" })
+            return
+        }
+        const firstComment = item.comments[0]
+        if (!firstComment) {
+            toaster.show("Comment thread is empty", { type: "error" })
+            return
+        }
+        const id = itemId(item, origIndex)
+        const commentUrl = firstComment.url ?? `${state!.pr.url}#discussion_r${firstComment.id}`
+        const allBodies = item.comments.map(c => `[${c.author}]\n${c.body}`).join("\n\n---\n\n")
+        const prompt = `Generate a GitHub issue from this PR review comment thread.
+
+Output ONLY a single JSON object with two keys: "title" (≤80 chars, imperative mood like "Add X" or "Fix Y") and "body" (markdown, 2-4 short paragraphs explaining the issue, what would resolve it, and including a link back to the original comment). No preamble, no code fences, just the JSON.
+
+Source thread on PR ${state!.pr.url}:
+File: ${item.file}:${item.line}
+Original comment URL: ${commentUrl}
+
+Thread:
+"""
+${allBodies}
+"""
+
+Output JSON now:`
+        const claudeShort = `${id} → issue`
+        toaster.show(`Generating ${claudeShort}…`, { type: "info", durationMs: 60000 })
+        try {
+            const claudeOut = await new Deno.Command("claude", {
+                args: ["-p", prompt],
+                stdout: "piped", stderr: "piped",
+            }).output()
+            if (claudeOut.code !== 0) {
+                const err = new TextDecoder().decode(claudeOut.stderr).trim() || `claude -p exited ${claudeOut.code}`
+                throw new Error(err)
+            }
+            const text = new TextDecoder().decode(claudeOut.stdout)
+            const jsonMatch = text.match(/\{[\s\S]*\}/)
+            if (!jsonMatch) throw new Error("claude output had no JSON")
+            const parsed = JSON.parse(jsonMatch[0]) as { title?: string; body?: string }
+            if (!parsed.title || !parsed.body) throw new Error("claude output missing title or body")
+
+            const ghOut = await new Deno.Command("gh", {
+                args: ["issue", "create", "-R", state!.pr.repo, "-t", parsed.title, "-b", parsed.body],
+                stdout: "piped", stderr: "piped",
+            }).output()
+            if (ghOut.code !== 0) {
+                const err = new TextDecoder().decode(ghOut.stderr).trim() || `gh issue create exited ${ghOut.code}`
+                throw new Error(err)
+            }
+            const issueUrl = new TextDecoder().decode(ghOut.stdout).trim().split("\n").pop() ?? ""
+            ;(item.linked_issues ??= []).push(issueUrl)
+            saveState(path, state!).catch(() => {})
+            if (mode.peek() === "list") { renderListView() } else { renderDetailView() }
+            toaster.show(`Issue created: ${parsed.title.slice(0, 60)} — ${issueUrl}`, { type: "success", durationMs: 8000 })
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            toaster.show(`Issue creation failed: ${msg.slice(0, 140)}`, { type: "error", durationMs: 8000 })
+        }
     }
 
     function askClaudeForCurrentItem(): void {
