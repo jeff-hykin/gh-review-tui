@@ -64,6 +64,35 @@ async function infoAction(): Promise<void> {
     console.log(path)
 }
 
+// State sync helpers — thin wrappers around git in ~/.gre. The user is
+// expected to have set up ~/.gre as a clone of their personal "gre state"
+// repo (see j_gre). We don't auto-commit; pulls are fast-forward only to
+// keep the contract simple.
+async function getGreDir(): Promise<string> {
+    const home = Deno.env.get("HOME")
+    if (!home) { throw new Error("HOME not set") }
+    return `${home}/.gre`
+}
+
+async function ensureGreIsRepo(greDir: string): Promise<void> {
+    try { await Deno.stat(`${greDir}/.git`) }
+    catch {
+        throw new Error(`${greDir} isn't a git repo. Init it first or clone your personal state repo into it (see README).`)
+    }
+}
+
+async function pullAction(): Promise<void> {
+    const greDir = await getGreDir()
+    await ensureGreIsRepo(greDir)
+    await $`git -C ${greDir} pull --ff-only`
+}
+
+async function pushAction(): Promise<void> {
+    const greDir = await getGreDir()
+    await ensureGreIsRepo(greDir)
+    await $`git -C ${greDir} push`
+}
+
 async function syncAction(): Promise<void> {
     const path = await getStatePathForCwd()
     const existing = await loadState(path)
@@ -302,6 +331,12 @@ export function buildCLI(): Command {
 
     cmd.command("info", "Print the path to the YAML state file for the current PR")
         .action(infoAction)
+
+    cmd.command("pull", "git pull --ff-only in ~/.gre (sync your gre state repo)")
+        .action(pullAction)
+
+    cmd.command("push", "git push in ~/.gre (sync your gre state repo). Manual commits only — run git -C ~/.gre add+commit first.")
+        .action(pushAction)
 
     cmd.command("sync", "Fetch PR data from GitHub and update local state")
         .action(syncAction)
