@@ -87,6 +87,38 @@ async function pullAction(): Promise<void> {
     await $`git -C ${greDir} pull --ff-only`
 }
 
+// Sticky active branch — saved to ~/.gre/.active.local (gitignored). Lets the
+// user run plain `gre <subcommand>` while pointing at a different PR than
+// what's checked out, without prefixing every call with --branch.
+async function setActiveAction(branch: string): Promise<void> {
+    const greDir = await getGreDir()
+    await Deno.mkdir(greDir, { recursive: true })
+    const trimmed = branch.trim()
+    if (!trimmed) { throw new Error("Branch name is empty") }
+    await Deno.writeTextFile(`${greDir}/.active.local`, trimmed + "\n")
+    // Make sure git ignores .active.local — it's per-machine, not part of state
+    const giPath = `${greDir}/.gitignore`
+    let gi = ""
+    try { gi = await Deno.readTextFile(giPath) } catch { /* missing */ }
+    if (!gi.split("\n").includes(".active.local")) {
+        const sep = gi === "" || gi.endsWith("\n") ? "" : "\n"
+        await Deno.writeTextFile(giPath, gi + sep + ".active.local\n")
+    }
+    console.log(`Active branch set: ${trimmed}`)
+    console.log("(Run \`gre unset-active\` to clear.)")
+}
+
+async function unsetActiveAction(): Promise<void> {
+    const greDir = await getGreDir()
+    const file = `${greDir}/.active.local`
+    try {
+        await Deno.remove(file)
+        console.log("Active branch cleared.")
+    } catch {
+        console.log("No active branch was set.")
+    }
+}
+
 async function pushAction(): Promise<void> {
     const greDir = await getGreDir()
     await ensureGreIsRepo(greDir)
@@ -337,6 +369,12 @@ export function buildCLI(): Command {
 
     cmd.command("push", "git push in ~/.gre (sync your gre state repo). Manual commits only — run git -C ~/.gre add+commit first.")
         .action(pushAction)
+
+    cmd.command("set-active <branch:string>", "Stickily route gre to <branch>'s PR (per-machine, until unset)")
+        .action((_o: void, branch: string) => setActiveAction(branch))
+
+    cmd.command("unset-active", "Clear the sticky active branch (gre falls back to current git branch)")
+        .action(unsetActiveAction)
 
     cmd.command("sync", "Fetch PR data from GitHub and update local state")
         .action(syncAction)

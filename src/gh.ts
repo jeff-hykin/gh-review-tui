@@ -11,10 +11,21 @@ export async function getGHUser(): Promise<string> {
 // ── Get current branch ───────────────────────────────────────────────────
 
 export async function getCurrentBranch(cwd?: string): Promise<string> {
-    // Honor GRE_BRANCH override so users can point gre at a different PR
-    // (`gre --branch X` / `gre --pr N` set this in gre.ts before exec).
+    // Resolution order:
+    //   1. GRE_BRANCH env var (set by `gre --branch X` / `gre --pr N` in gre.ts)
+    //   2. Sticky active branch from ~/.gre/.active.local (`gre set-active X`)
+    //   3. git rev-parse --abbrev-ref HEAD in cwd
     const override = Deno.env.get("GRE_BRANCH")
     if (override) { return override }
+
+    const home = Deno.env.get("HOME")
+    if (home) {
+        try {
+            const active = (await Deno.readTextFile(`${home}/.gre/.active.local`)).trim()
+            if (active) { return active }
+        } catch { /* file doesn't exist; fall through */ }
+    }
+
     const cmd = $`git rev-parse --abbrev-ref HEAD`.stdout("piped")
     if (cwd) {
         cmd.cwd(cwd)
